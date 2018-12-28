@@ -43,7 +43,7 @@ ggit::tbl_git(path = Sys.getenv("HOME"))
 A shiny application is included within the package ([`shiny`](https://github.com/rstudio/shiny) must be installed).
 Just use:
 
-```{r shiny}
+```{r shiny, eval=FALSE}
 ggit::run_app()
 ```
 
