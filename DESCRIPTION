@@ -1,0 +1,27 @@
+Package: ggit
+Title: A Glance at Git Repositories
+Version: 0.1.0
+Authors@R: 
+    person(given = "Denis",
+           family = "Roussel",
+           role = c("aut", "cre"),
+           email = "deroussel@gmail.com")
+Description: This package exposes utility function to manage multiple git repositories on a machine.
+License: MIT + file LICENSE
+Depends: 
+    R (>= 3.5)
+Imports: 
+    git2r,
+    dplyr,
+    stringr,
+    tibble,
+    purrr,
+    magrittr,
+    glue,
+    rlang
+Suggests: 
+    shiny
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 6.1.1
+Date: 2018-12-28

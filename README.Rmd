@@ -1,0 +1,52 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%"
+)
+```
+# ggit
+
+The goal of ggit is to help manage multiple `git` repositories.
+It first list all available repositories by scanning all files recursively from a starting path.
+Then, some actions can be performed such as:
+
++ Fetching all repositories in one command
++ Listing all repositories with a broken remote
++ Print the date of the last pull
+
+## Installation
+
+You can install the current version of ggit with:
+
+``` r
+remotes::install_github("denrou/ggit")
+```
+
+## Example
+
+List all repositories located in the HOME directory
+
+```{r example}
+ggit::tbl_git(path = Sys.getenv("HOME"))
+```
+
+## Shiny application
+
+A shiny application is included within the package ([`shiny`](https://github.com/rstudio/shiny) must be installed).
+Just use:
+
+```{r shiny}
+ggit::run_app()
+```
+
+Here is a screenshot of the application:
+
+![Alt text](inst/images/Screenshot_2018-12-28 Glance Git Repositories.png?raw=true "Screenshot ggit shiny application")
