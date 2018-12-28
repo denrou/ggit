@@ -32,7 +32,10 @@ progress_bar <- R6::R6Class(
 )
 
 assert_shiny <- function() {
-  if (!requireNamespace("shiny", quietly = TRUE)) {
-    stop('Shiny must be installed to run this command. Use `install.package("shiny").`')
+  deps       <- desc::desc_get_deps(system.file("DESCRIPTION", package = "ggit"))
+  shiny_deps <- unlist(deps[deps[["type"]] == "Suggests", "package"])
+  if (!all(purrr::map_lgl(shiny_deps, requireNamespace, quietly = TRUE))) {
+    stop('Some dependancies are missing to run the shiny application.',
+         'Install them using `remotes::install_github("denrou/ggit")`')
   }
 }

@@ -1,6 +1,6 @@
 Package: ggit
 Title: A Glance at Git Repositories
-Version: 0.2.0
+Version: 0.3.0
 Authors@R: 
     person(given = "Denis",
            family = "Roussel",
@@ -11,6 +11,7 @@ License: MIT + file LICENSE
 Depends: 
     R (>= 3.5)
 Imports: 
+    desc,
     git2r,
     dplyr,
     stringr,
@@ -20,8 +21,13 @@ Imports:
     glue,
     rlang
 Suggests: 
-    shiny
+    gt,
+    lubridate,
+    shiny,
+    shinydashboard,
+    tidyr
 Encoding: UTF-8
+Remotes: rstudio/gt
 LazyData: true
 RoxygenNote: 6.1.1
 Date: 2018-12-28
