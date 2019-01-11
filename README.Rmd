@@ -34,9 +34,16 @@ remotes::install_github("denrou/ggit")
 
 List all repositories located in the HOME directory
 
-```{r example}
+```{r example_git}
 ggit::tbl_git(path = Sys.getenv("HOME"))
 ```
+
+Get all contributions for all projects
+
+```{r example_contrib}
+ggit::contributions()
+```
+
 
 ## Shiny application
 
