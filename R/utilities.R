@@ -1,3 +1,29 @@
+merge_nested_lists<- function(base, additional) {
+  assertthat::assert_that(
+    all(table(names(base)) == 1),
+    all(table(names(additional)) == 1),
+    msg = glue::glue("Names must be unique for both lists."))
+  res       <- c(base, additional)
+  counts    <- table(names(res))
+  conflicts <- names(counts[counts > 1])
+  for (conflict in conflicts) {
+    ids <- which(names(res) == conflict)
+    new_element <- if (is.list(base[[conflict]]) && is.list(additional[[conflict]])) {
+      merge_nested_lists(base[[conflict]], additional[[conflict]])
+    } else {
+      new_element <- additional[[conflict]]
+    }
+    if (is.null(new_element)) {
+      res[ids[1]] <- list(NULL)
+    } else {
+      res[[ids[1]]] <- new_element
+    }
+    res[ids[2]] <- NULL
+  }
+  res
+}
+
+
 progress_bar <- R6::R6Class(
   "progress_bar",
   public = list(
