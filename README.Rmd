@@ -44,6 +44,11 @@ Get all contributions for all projects
 ggit::contributions()
 ```
 
+Get all configuration files for all projects:
+
+```{r example_config}
+ggit::configs()
+```
 
 ## Shiny application
 
@@ -56,4 +61,5 @@ ggit::run_app()
 
 Here is a screenshot of the application:
 
-![Alt text](inst/images/Screenshot_2018-12-28 Glance Git Repositories.png?raw=true "Screenshot ggit shiny application")
+![Alt text](inst/images/Screenshot_2019-01-14 Glance Git Repositories(1).png?raw=true "Screenshot ggit shiny application")
+![Alt text](inst/images/Screenshot_2019-01-14 Glance Git Repositories.png?raw=true "Screenshot ggit shiny application")
