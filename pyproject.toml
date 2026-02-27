@@ -1,0 +1,22 @@
+[project]
+name = "ggit"
+version = "0.1.0"
+description = "CLI to scan directories for git repositories and get a quick overview of their status"
+authors = [{ name = "Denis Roussel", email = "deroussel@gmail.com" }]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "typer",
+    "GitPython",
+]
+
+[project.scripts]
+ggit = "ggit.cli:app"
+
+[dependency-groups]
+dev = ["pytest"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
