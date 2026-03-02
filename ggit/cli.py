@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -6,7 +7,14 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from ggit.repo_info import format_status, get_details, get_summary, is_dirty
+from ggit.repo_info import (
+    format_status,
+    get_details,
+    get_github_pr_counts,
+    get_summary,
+    is_dirty,
+    parse_github_repo,
+)
 from ggit.scanner import find_repos
 
 app = typer.Typer(help="Scan directories for git repositories and display an overview.")
@@ -64,6 +72,33 @@ def list_repos(
             print(s["path"])
         return
 
+    # Enrich with GitHub PR counts
+    github_repos: dict = {}
+    for s in summaries:
+        origin = s.get("origin")
+        if origin:
+            gh_repo = parse_github_repo(origin)
+            if gh_repo and gh_repo not in github_repos:
+                github_repos[gh_repo] = None
+
+    if github_repos:
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {repo: executor.submit(get_github_pr_counts, repo) for repo in github_repos}
+            for repo, future in futures.items():
+                github_repos[repo] = future.result()
+
+    for s in summaries:
+        origin = s.get("origin")
+        gh_repo = parse_github_repo(origin) if origin else None
+        s["github_repo"] = gh_repo
+        if gh_repo:
+            pr_counts = github_repos.get(gh_repo)
+            s["open_prs"] = pr_counts[0] if pr_counts else None
+            s["my_prs"] = pr_counts[1] if pr_counts else None
+        else:
+            s["open_prs"] = None
+            s["my_prs"] = None
+
     if output_json:
         console.print(json.dumps(summaries, indent=2))
         return
@@ -74,11 +109,24 @@ def list_repos(
     table.add_column("Branch")
     table.add_column("Branches")
     table.add_column("Status")
+    table.add_column("Origin")
+    table.add_column("PRs")
     table.add_column("Last Commit")
     for s in summaries:
         branches = f"{s['local_branches']}/{s['remote_branches']}"
         status = format_status(s)
-        table.add_row(s["name"], s["path"], s["branch"], branches, status, s["last_commit"])
+        gh_repo = s.get("github_repo")
+        if gh_repo:
+            origin_display = gh_repo
+        elif s.get("origin"):
+            origin_display = s["origin"]
+        else:
+            origin_display = ""
+        if s.get("open_prs") is not None:
+            prs_display = f"{s['open_prs']}/{s['my_prs']}"
+        else:
+            prs_display = ""
+        table.add_row(s["name"], s["path"], s["branch"], branches, status, origin_display, prs_display, s["last_commit"])
     console.print(table)
     console.print(f"Found {len(summaries)} repositories")
 

@@ -1,4 +1,8 @@
+import json as _json
+import re
+import subprocess
 from pathlib import Path
+from typing import Optional, Tuple
 
 from git import Repo
 
@@ -24,6 +28,11 @@ def get_summary(path: Path) -> dict:
     except (TypeError, ValueError):
         ahead = 0
 
+    try:
+        origin = repo.remotes.origin.url
+    except (AttributeError, ValueError):
+        origin = None
+
     return {
         "name": path.name,
         "path": str(path),
@@ -35,6 +44,7 @@ def get_summary(path: Path) -> dict:
         "staged": staged,
         "untracked": untracked,
         "ahead": ahead,
+        "origin": origin,
     }
 
 
@@ -97,3 +107,41 @@ def get_details(path: Path) -> dict:
         "last_fetch": last_fetch,
         "authors": authors,
     }
+
+
+def parse_github_repo(url: str) -> Optional[str]:
+    """Extract 'owner/repo' from a GitHub URL, or None if not a GitHub URL."""
+    patterns = [
+        r"https?://github\.com/([^/]+/[^/]+?)(?:\.git)?/?$",
+        r"git@github\.com:([^/]+/[^/]+?)(?:\.git)?/?$",
+        r"ssh://git@github\.com/([^/]+/[^/]+?)(?:\.git)?/?$",
+    ]
+    for pattern in patterns:
+        m = re.match(pattern, url)
+        if m:
+            return m.group(1)
+    return None
+
+
+def get_github_pr_counts(owner_repo: str) -> Optional[Tuple[int, int]]:
+    """Return (total_open_prs, assigned_to_me_prs) for a GitHub repo, or None on failure."""
+    try:
+        total_result = subprocess.run(
+            ["gh", "pr", "list", "--repo", owner_repo, "--state", "open", "--json", "number", "--limit", "1000"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if total_result.returncode != 0:
+            return None
+        total = len(_json.loads(total_result.stdout))
+
+        mine_result = subprocess.run(
+            ["gh", "pr", "list", "--repo", owner_repo, "--state", "open", "--assignee", "@me", "--json", "number", "--limit", "1000"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if mine_result.returncode != 0:
+            return None
+        mine = len(_json.loads(mine_result.stdout))
+
+        return (total, mine)
+    except (subprocess.TimeoutExpired, FileNotFoundError, _json.JSONDecodeError):
+        return None

@@ -1,9 +1,11 @@
+import os
 from unittest.mock import patch
 
 from typer.testing import CliRunner
 
 from ggit.cli import app
 
+os.environ["COLUMNS"] = "300"
 runner = CliRunner()
 
 CLEAN_REPO = {
@@ -17,6 +19,7 @@ CLEAN_REPO = {
     "staged": 0,
     "untracked": 0,
     "ahead": 0,
+    "origin": "https://github.com/acme/clean-repo.git",
 }
 
 DIRTY_REPO = {
@@ -30,6 +33,7 @@ DIRTY_REPO = {
     "staged": 1,
     "untracked": 0,
     "ahead": 0,
+    "origin": "https://gitlab.com/acme/dirty-repo.git",
 }
 
 MANY_BRANCHES_REPO = {
@@ -43,6 +47,7 @@ MANY_BRANCHES_REPO = {
     "staged": 0,
     "untracked": 0,
     "ahead": 0,
+    "origin": None,
 }
 
 ALL_SUMMARIES = [CLEAN_REPO, DIRTY_REPO, MANY_BRANCHES_REPO]
@@ -59,9 +64,10 @@ def _mock_get_summary(path):
     raise ValueError(f"Unknown path: {path}")
 
 
+@patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_no_filter(mock_find, mock_summary):
+def test_list_no_filter(mock_find, mock_summary, mock_prs):
     result = runner.invoke(app, ["list", "/tmp"])
     assert result.exit_code == 0
     assert "clean-repo" in result.output
@@ -70,9 +76,24 @@ def test_list_no_filter(mock_find, mock_summary):
     assert "3 repositories" in result.output
 
 
+@patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_dirty(mock_find, mock_summary):
+def test_list_shows_origin(mock_find, mock_summary, mock_prs):
+    result = runner.invoke(app, ["list", "/tmp"])
+    assert result.exit_code == 0
+    # GitHub origin shown as org/repo
+    assert "acme/clean-repo" in result.output
+    # Non-GitHub origin shown as full URL
+    assert "https://gitlab.com/acme/dirty-repo.git" in result.output
+    # PR counts shown for GitHub repo
+    assert "5/2" in result.output
+
+
+@patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
+@patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
+@patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
+def test_list_dirty(mock_find, mock_summary, mock_prs):
     result = runner.invoke(app, ["list", "/tmp", "--dirty"])
     assert result.exit_code == 0
     assert "dirty-repo" in result.output
@@ -81,9 +102,10 @@ def test_list_dirty(mock_find, mock_summary):
     assert "1 repositories" in result.output
 
 
+@patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_clean(mock_find, mock_summary):
+def test_list_clean(mock_find, mock_summary, mock_prs):
     result = runner.invoke(app, ["list", "/tmp", "--clean"])
     assert result.exit_code == 0
     assert "clean-repo" in result.output
@@ -99,9 +121,10 @@ def test_list_dirty_and_clean_exclusive(mock_find, mock_summary):
     assert result.exit_code != 0
 
 
+@patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_min_local_branches(mock_find, mock_summary):
+def test_list_min_local_branches(mock_find, mock_summary, mock_prs):
     result = runner.invoke(app, ["list", "/tmp", "--min-local-branches", "5"])
     assert result.exit_code == 0
     assert "dirty-repo" in result.output
@@ -110,9 +133,10 @@ def test_list_min_local_branches(mock_find, mock_summary):
     assert "2 repositories" in result.output
 
 
+@patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_min_remote_branches(mock_find, mock_summary):
+def test_list_min_remote_branches(mock_find, mock_summary, mock_prs):
     result = runner.invoke(app, ["list", "/tmp", "--min-remote-branches", "5"])
     assert result.exit_code == 0
     assert "branches-repo" in result.output
@@ -121,9 +145,10 @@ def test_list_min_remote_branches(mock_find, mock_summary):
     assert "1 repositories" in result.output
 
 
+@patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_combined_filters(mock_find, mock_summary):
+def test_list_combined_filters(mock_find, mock_summary, mock_prs):
     result = runner.invoke(app, ["list", "/tmp", "--dirty", "--min-local-branches", "3"])
     assert result.exit_code == 0
     assert "dirty-repo" in result.output
@@ -132,9 +157,10 @@ def test_list_combined_filters(mock_find, mock_summary):
     assert "1 repositories" in result.output
 
 
+@patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_json_with_filter(mock_find, mock_summary):
+def test_list_json_with_filter(mock_find, mock_summary, mock_prs):
     result = runner.invoke(app, ["list", "/tmp", "--dirty", "--json"])
     assert result.exit_code == 0
     assert "dirty-repo" in result.output
