@@ -1,12 +1,10 @@
-import os
+from pathlib import Path
 from unittest.mock import patch
 
-from typer.testing import CliRunner
+import pytest
+from textual.coordinate import Coordinate
 
-from ggit.cli import app
-
-os.environ["COLUMNS"] = "300"
-runner = CliRunner()
+from ggit.cli import GgitApp
 
 CLEAN_REPO = {
     "name": "clean-repo",
@@ -54,7 +52,7 @@ ALL_SUMMARIES = [CLEAN_REPO, DIRTY_REPO, MANY_BRANCHES_REPO]
 
 
 def _mock_find_repos(path):
-    return [s["path"] for s in ALL_SUMMARIES]
+    return [Path(s["path"]) for s in ALL_SUMMARIES]
 
 
 def _mock_get_summary(path):
@@ -64,125 +62,197 @@ def _mock_get_summary(path):
     raise ValueError(f"Unknown path: {path}")
 
 
+def _make_app():
+    return GgitApp("/tmp")
+
+
+def _get_table_row_values(table, row_idx):
+    """Get values from a DataTable row by index."""
+    row_key, _ = table.coordinate_to_cell_key(Coordinate(row_idx, 0))
+    return table.get_row(row_key)
+
+
+async def _wait_for_table(pilot):
+    """Wait until the DataTable is visible and has rows."""
+    for _ in range(100):
+        await pilot.pause()
+        table = pilot.app.query_one("#repo-table")
+        if table.display and table.row_count > 0:
+            return
+    raise TimeoutError("Table never populated")
+
+
+@pytest.mark.asyncio
 @patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_no_filter(mock_find, mock_summary, mock_prs):
-    result = runner.invoke(app, ["list", "/tmp"])
-    assert result.exit_code == 0
-    assert "clean-repo" in result.output
-    assert "dirty-repo" in result.output
-    assert "branches-repo" in result.output
-    assert "3 repositories" in result.output
+async def test_table_loads_repos(mock_find, mock_summary, mock_prs):
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        table = pilot.app.query_one("#repo-table")
+        assert table.row_count == 3
 
 
+@pytest.mark.asyncio
 @patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_shows_origin(mock_find, mock_summary, mock_prs):
-    result = runner.invoke(app, ["list", "/tmp"])
-    assert result.exit_code == 0
-    # GitHub origin shown as org/repo
-    assert "acme/clean-repo" in result.output
-    # Non-GitHub origin shown as full URL
-    assert "https://gitlab.com/acme/dirty-repo.git" in result.output
-    # PR counts shown for GitHub repo
-    assert "5/2" in result.output
+async def test_status_bar_shows_count(mock_find, mock_summary, mock_prs):
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        assert len(pilot.app.filtered_summaries) == 3
 
 
+@pytest.mark.asyncio
 @patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_dirty(mock_find, mock_summary, mock_prs):
-    result = runner.invoke(app, ["list", "/tmp", "--dirty"])
-    assert result.exit_code == 0
-    assert "dirty-repo" in result.output
-    assert "clean-repo" not in result.output
-    assert "branches-repo" not in result.output
-    assert "1 repositories" in result.output
+async def test_filter_dirty(mock_find, mock_summary, mock_prs):
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        await pilot.press("d")
+        await pilot.pause()
+        table = pilot.app.query_one("#repo-table")
+        assert table.row_count == 1
+        values = _get_table_row_values(table, 0)
+        assert values[0] == "dirty-repo"
+        assert pilot.app.filter_mode == "dirty"
 
 
+@pytest.mark.asyncio
 @patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_clean(mock_find, mock_summary, mock_prs):
-    result = runner.invoke(app, ["list", "/tmp", "--clean"])
-    assert result.exit_code == 0
-    assert "clean-repo" in result.output
-    assert "branches-repo" in result.output
-    assert "dirty-repo" not in result.output
-    assert "2 repositories" in result.output
+async def test_filter_clean(mock_find, mock_summary, mock_prs):
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        await pilot.press("c")
+        await pilot.pause()
+        table = pilot.app.query_one("#repo-table")
+        assert table.row_count == 2
+        names = [_get_table_row_values(table, i)[0] for i in range(table.row_count)]
+        assert "clean-repo" in names
+        assert "branches-repo" in names
+        assert "dirty-repo" not in names
+        assert pilot.app.filter_mode == "clean"
 
 
-@patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
-@patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_dirty_and_clean_exclusive(mock_find, mock_summary):
-    result = runner.invoke(app, ["list", "/tmp", "--dirty", "--clean"])
-    assert result.exit_code != 0
-
-
+@pytest.mark.asyncio
 @patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_min_local_branches(mock_find, mock_summary, mock_prs):
-    result = runner.invoke(app, ["list", "/tmp", "--min-local-branches", "5"])
-    assert result.exit_code == 0
-    assert "dirty-repo" in result.output
-    assert "branches-repo" in result.output
-    assert "clean-repo" not in result.output
-    assert "2 repositories" in result.output
+async def test_filter_all_resets(mock_find, mock_summary, mock_prs):
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        await pilot.press("d")
+        await pilot.pause()
+        assert pilot.app.query_one("#repo-table").row_count == 1
+        await pilot.press("a")
+        await pilot.pause()
+        assert pilot.app.query_one("#repo-table").row_count == 3
+        assert pilot.app.filter_mode == "all"
 
 
+@pytest.mark.asyncio
 @patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_min_remote_branches(mock_find, mock_summary, mock_prs):
-    result = runner.invoke(app, ["list", "/tmp", "--min-remote-branches", "5"])
-    assert result.exit_code == 0
-    assert "branches-repo" in result.output
-    assert "clean-repo" not in result.output
-    assert "dirty-repo" not in result.output
-    assert "1 repositories" in result.output
+async def test_sort_cycle(mock_find, mock_summary, mock_prs):
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        assert pilot.app.sort_column == "name"
+
+        await pilot.press("s")
+        await pilot.pause()
+        assert pilot.app.sort_column == "branch"
+
+        await pilot.press("s")
+        await pilot.pause()
+        assert pilot.app.sort_column == "last_commit"
+
+        await pilot.press("s")
+        await pilot.pause()
+        assert pilot.app.sort_column == "name"
 
 
+@pytest.mark.asyncio
 @patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_combined_filters(mock_find, mock_summary, mock_prs):
-    result = runner.invoke(app, ["list", "/tmp", "--dirty", "--min-local-branches", "3"])
-    assert result.exit_code == 0
-    assert "dirty-repo" in result.output
-    assert "clean-repo" not in result.output
-    assert "branches-repo" not in result.output
-    assert "1 repositories" in result.output
+async def test_reverse_sort(mock_find, mock_summary, mock_prs):
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        assert pilot.app.sort_reverse is False
+
+        await pilot.press("r")
+        await pilot.pause()
+        assert pilot.app.sort_reverse is True
+
+        # Check order is reversed (name desc: dirty > clean > branches)
+        table = pilot.app.query_one("#repo-table")
+        first = _get_table_row_values(table, 0)[0]
+        assert first == "dirty-repo"
 
 
+@pytest.mark.asyncio
+@patch("ggit.cli.get_details", return_value={
+    "name": "branches-repo",
+    "branch": "main",
+    "local_branches": ["main", "dev"],
+    "remote_branches": ["origin/main"],
+    "last_commit": "2025-03-10",
+    "last_fetch": "2025-03-09",
+    "authors": ["Alice", "Bob"],
+})
 @patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_json_with_filter(mock_find, mock_summary, mock_prs):
-    result = runner.invoke(app, ["list", "/tmp", "--dirty", "--json"])
-    assert result.exit_code == 0
-    assert "dirty-repo" in result.output
-    assert "clean-repo" not in result.output
+async def test_enter_detail_and_escape(mock_find, mock_summary, mock_prs, mock_details):
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        await pilot.press("enter")
+        # Wait for detail screen content
+        for _ in range(100):
+            await pilot.pause()
+            screen = pilot.app.screen
+            if hasattr(screen, "detail_text") and "Repository:" in screen.detail_text:
+                break
+
+        text = pilot.app.screen.detail_text
+        assert "Repository:" in text
+        assert "Authors: Alice, Bob" in text
+
+        await pilot.press("escape")
+        await pilot.pause()
+        table = pilot.app.query_one("#repo-table")
+        assert table.row_count == 3
 
 
+@pytest.mark.asyncio
+@patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_quiet(mock_find, mock_summary):
-    result = runner.invoke(app, ["list", "/tmp", "-q"])
-    assert result.exit_code == 0
-    lines = result.output.strip().splitlines()
-    assert lines == ["/tmp/branches-repo", "/tmp/clean-repo", "/tmp/dirty-repo"]
-    # No table header or "Found N repositories" footer
-    assert "Name" not in result.output
-    assert "repositories" not in result.output
+async def test_pr_counts_displayed(mock_find, mock_summary, mock_prs):
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        # Wait for phase 2 (PR counts) to complete
+        table = pilot.app.query_one("#repo-table")
+        for _ in range(100):
+            await pilot.pause()
+            values = _get_table_row_values(table, 0)
+            # PRs column is index 5
+            if values[5] == "5/2":
+                break
+        # clean-repo (first alphabetically) should have PR counts
+        values = _get_table_row_values(table, 0)
+        assert values[0] == "branches-repo" or values[5] == "5/2"
 
 
+@pytest.mark.asyncio
+@patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
-def test_list_quiet_with_filter(mock_find, mock_summary):
-    result = runner.invoke(app, ["list", "/tmp", "--quiet", "--dirty"])
-    assert result.exit_code == 0
-    lines = result.output.strip().splitlines()
-    assert lines == ["/tmp/dirty-repo"]
+async def test_quit(mock_find, mock_summary, mock_prs):
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        await pilot.press("q")

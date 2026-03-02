@@ -1,0 +1,24 @@
+#loading {
+    height: auto;
+}
+
+#repo-table {
+    height: 1fr;
+}
+
+#status-bar {
+    dock: bottom;
+    height: 1;
+    background: $accent;
+    color: $text;
+    padding: 0 1;
+}
+
+DetailScreen {
+    layout: vertical;
+}
+
+#detail-content {
+    padding: 1 2;
+    height: 1fr;
+}

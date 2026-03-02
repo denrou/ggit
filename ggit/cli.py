@@ -1,11 +1,12 @@
-import json
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Optional
 
-import typer
-from rich.console import Console
-from rich.table import Table
+from textual import work
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.screen import Screen
+from textual.widgets import DataTable, Footer, Header, Label, LoadingIndicator, Static
 
 from ggit.repo_info import (
     format_status,
@@ -17,137 +18,226 @@ from ggit.repo_info import (
 )
 from ggit.scanner import find_repos
 
-app = typer.Typer(help="Scan directories for git repositories and display an overview.")
-console = Console()
+COLUMNS = ["Name", "Branch", "Status", "Branches", "Origin", "PRs", "Last Commit"]
+SORT_KEYS = ["name", "branch", "last_commit"]
+SORT_LABELS = ["Name", "Branch", "Last Commit"]
 
 
-def _dirty_clean_callback(ctx: typer.Context, param: typer.CallbackParam, value: bool) -> bool:
-    """Ensure --dirty and --clean are mutually exclusive."""
-    if value:
-        other = "clean" if param.name == "dirty" else "dirty"
-        if ctx.params.get(other):
-            raise typer.BadParameter("--dirty and --clean are mutually exclusive.")
-    return value
+class DetailScreen(Screen):
+    BINDINGS = [
+        Binding("escape", "go_back", "Back", show=True),
+    ]
 
+    def __init__(self, summary: dict) -> None:
+        super().__init__()
+        self.summary = summary
 
-@app.command("list")
-def list_repos(
-    path: Optional[str] = typer.Argument(None, help="Directory to scan for git repos."),
-    sort: str = typer.Option("name", "--sort", "-s", help="Sort by: name, branch, date."),
-    output_json: bool = typer.Option(False, "--json", "-j", help="Output as JSON."),
-    reverse: bool = typer.Option(False, "--reverse", "-r", help="Reverse sort order."),
-    dirty: bool = typer.Option(False, "--dirty", help="Show only repos with uncommitted or unpushed changes.", callback=_dirty_clean_callback),
-    clean: bool = typer.Option(False, "--clean", help="Show only repos with a clean status.", callback=_dirty_clean_callback),
-    min_local_branches: Optional[int] = typer.Option(None, "--min-local-branches", help="Show repos with at least N local branches."),
-    min_remote_branches: Optional[int] = typer.Option(None, "--min-remote-branches", help="Show repos with at least N remote branches."),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Only output repository paths, one per line."),
-) -> None:
-    """Scan a directory for git repositories and display an overview table."""
-    scan_path = path or "."
-    repos = find_repos(scan_path)
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Label("Loading details...", id="detail-content")
+        yield Footer()
 
-    summaries: list[dict] = []
-    for repo_path in repos:
+    def on_mount(self) -> None:
+        self.load_details()
+
+    @work(thread=True)
+    def load_details(self) -> None:
+        path = Path(self.summary["path"])
         try:
-            summaries.append(get_summary(repo_path))
+            details = get_details(path)
         except Exception:
-            pass
+            self.app.call_from_thread(self._show_error)
+            return
+        self.app.call_from_thread(self._show_details, details)
 
-    if dirty:
-        summaries = [s for s in summaries if is_dirty(s)]
-    elif clean:
-        summaries = [s for s in summaries if not is_dirty(s)]
+    def _show_error(self) -> None:
+        label = self.query_one("#detail-content", Label)
+        label.update(f"Error loading details for {self.summary['name']}")
 
-    if min_local_branches is not None:
-        summaries = [s for s in summaries if s["local_branches"] >= min_local_branches]
+    def _show_details(self, details: dict) -> None:
+        label = self.query_one("#detail-content", Label)
+        lines = [
+            f"Repository: {details['name']}",
+            f"Current branch: {details['branch']}",
+            f"Local branches: {', '.join(details['local_branches'])}",
+            f"Remote branches: {', '.join(details['remote_branches'])}",
+            f"Last commit: {details['last_commit']}",
+            f"Last fetch: {details['last_fetch'] or 'N/A'}",
+            f"Authors: {', '.join(details['authors'])}",
+        ]
+        self.detail_text = "\n".join(lines)
+        label.update(self.detail_text)
 
-    if min_remote_branches is not None:
-        summaries = [s for s in summaries if s["remote_branches"] >= min_remote_branches]
+    def action_go_back(self) -> None:
+        self.app.pop_screen()
 
-    sort_key = {"name": "name", "branch": "branch", "date": "last_commit"}.get(sort, "name")
-    summaries.sort(key=lambda s: s[sort_key], reverse=reverse)
 
-    if quiet:
+class GgitApp(App):
+    CSS_PATH = "app.css"
+    TITLE = "ggit"
+
+    BINDINGS = [
+        Binding("s", "cycle_sort", "Sort", show=True),
+        Binding("r", "toggle_reverse", "Reverse", show=True),
+        Binding("d", "filter_dirty", "Dirty", show=True),
+        Binding("c", "filter_clean", "Clean", show=True),
+        Binding("a", "filter_all", "All", show=True),
+        Binding("q", "quit", "Quit", show=True),
+    ]
+
+    def __init__(self, path: str = ".") -> None:
+        super().__init__()
+        self.scan_path = path
+        self.summaries: list[dict] = []
+        self.filtered_summaries: list[dict] = []
+        self.sort_column = "name"
+        self.sort_reverse = False
+        self.filter_mode = "all"
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield LoadingIndicator(id="loading")
+        table = DataTable(id="repo-table", cursor_type="row")
+        for col in COLUMNS:
+            table.add_column(col, key=col.lower().replace(" ", "_"))
+        yield table
+        yield Static("", id="status-bar")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.query_one("#repo-table", DataTable).display = False
+        self.load_repos()
+
+    @work(thread=True)
+    def load_repos(self) -> None:
+        # Phase 1: scan and get summaries
+        repos = find_repos(self.scan_path)
+        summaries = []
+        for repo_path in repos:
+            try:
+                summaries.append(get_summary(repo_path))
+            except Exception:
+                pass
+        self.summaries = summaries
+        self.call_from_thread(self._phase1_done)
+
+        # Phase 2: fetch GitHub PR counts
+        github_repos: dict = {}
         for s in summaries:
-            print(s["path"])
-        return
+            origin = s.get("origin")
+            if origin:
+                gh_repo = parse_github_repo(origin)
+                if gh_repo and gh_repo not in github_repos:
+                    github_repos[gh_repo] = None
 
-    # Enrich with GitHub PR counts
-    github_repos: dict = {}
-    for s in summaries:
-        origin = s.get("origin")
-        if origin:
-            gh_repo = parse_github_repo(origin)
-            if gh_repo and gh_repo not in github_repos:
-                github_repos[gh_repo] = None
+        if github_repos:
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = {repo: executor.submit(get_github_pr_counts, repo) for repo in github_repos}
+                for repo, future in futures.items():
+                    github_repos[repo] = future.result()
 
-    if github_repos:
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            futures = {repo: executor.submit(get_github_pr_counts, repo) for repo in github_repos}
-            for repo, future in futures.items():
-                github_repos[repo] = future.result()
+        for s in summaries:
+            origin = s.get("origin")
+            gh_repo = parse_github_repo(origin) if origin else None
+            s["github_repo"] = gh_repo
+            if gh_repo:
+                pr_counts = github_repos.get(gh_repo)
+                s["open_prs"] = pr_counts[0] if pr_counts else None
+                s["my_prs"] = pr_counts[1] if pr_counts else None
+            else:
+                s["open_prs"] = None
+                s["my_prs"] = None
 
-    for s in summaries:
-        origin = s.get("origin")
-        gh_repo = parse_github_repo(origin) if origin else None
-        s["github_repo"] = gh_repo
-        if gh_repo:
-            pr_counts = github_repos.get(gh_repo)
-            s["open_prs"] = pr_counts[0] if pr_counts else None
-            s["my_prs"] = pr_counts[1] if pr_counts else None
+        self.call_from_thread(self.refresh_table)
+
+    def _phase1_done(self) -> None:
+        for s in self.summaries:
+            if "github_repo" not in s:
+                origin = s.get("origin")
+                gh_repo = parse_github_repo(origin) if origin else None
+                s["github_repo"] = gh_repo
+                s["open_prs"] = None
+                s["my_prs"] = None
+        loading = self.query_one("#loading", LoadingIndicator)
+        loading.display = False
+        table = self.query_one("#repo-table", DataTable)
+        table.display = True
+        self.refresh_table()
+
+    def refresh_table(self) -> None:
+        table = self.query_one("#repo-table", DataTable)
+        status_bar = self.query_one("#status-bar", Static)
+
+        # Filter
+        if self.filter_mode == "dirty":
+            filtered = [s for s in self.summaries if is_dirty(s)]
+        elif self.filter_mode == "clean":
+            filtered = [s for s in self.summaries if not is_dirty(s)]
         else:
-            s["open_prs"] = None
-            s["my_prs"] = None
+            filtered = list(self.summaries)
 
-    if output_json:
-        console.print(json.dumps(summaries, indent=2))
-        return
+        # Sort
+        filtered.sort(key=lambda s: s[self.sort_column], reverse=self.sort_reverse)
+        self.filtered_summaries = filtered
 
-    table = Table()
-    table.add_column("Name")
-    table.add_column("Path")
-    table.add_column("Branch")
-    table.add_column("Branches")
-    table.add_column("Status")
-    table.add_column("Origin")
-    table.add_column("PRs")
-    table.add_column("Last Commit")
-    for s in summaries:
-        branches = f"{s['local_branches']}/{s['remote_branches']}"
-        status = format_status(s)
-        gh_repo = s.get("github_repo")
-        if gh_repo:
-            origin_display = gh_repo
-        elif s.get("origin"):
-            origin_display = s["origin"]
-        else:
-            origin_display = ""
-        if s.get("open_prs") is not None:
-            prs_display = f"{s['open_prs']}/{s['my_prs']}"
-        else:
-            prs_display = ""
-        table.add_row(s["name"], s["path"], s["branch"], branches, status, origin_display, prs_display, s["last_commit"])
-    console.print(table)
-    console.print(f"Found {len(summaries)} repositories")
+        # Rebuild table
+        table.clear()
+        for s in filtered:
+            branches = f"{s['local_branches']}/{s['remote_branches']}"
+            status = format_status(s)
+            gh_repo = s.get("github_repo")
+            if gh_repo:
+                origin_display = gh_repo
+            elif s.get("origin"):
+                origin_display = s["origin"]
+            else:
+                origin_display = ""
+            if s.get("open_prs") is not None:
+                prs_display = f"{s['open_prs']}/{s['my_prs']}"
+            else:
+                prs_display = ""
+            table.add_row(
+                s["name"], s["branch"], status, branches,
+                origin_display, prs_display, s["last_commit"],
+            )
+
+        # Status bar
+        sort_label = SORT_LABELS[SORT_KEYS.index(self.sort_column)]
+        direction = "desc" if self.sort_reverse else "asc"
+        filter_text = f" | Filter: {self.filter_mode}" if self.filter_mode != "all" else ""
+        status_bar.update(
+            f" {len(filtered)} repos | Sort: {sort_label} ({direction}){filter_text}"
+        )
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        table = self.query_one("#repo-table", DataTable)
+        idx = table.get_row_index(event.row_key)
+        if 0 <= idx < len(self.filtered_summaries):
+            self.push_screen(DetailScreen(self.filtered_summaries[idx]))
+
+    def action_cycle_sort(self) -> None:
+        current = SORT_KEYS.index(self.sort_column)
+        self.sort_column = SORT_KEYS[(current + 1) % len(SORT_KEYS)]
+        self.refresh_table()
+
+    def action_toggle_reverse(self) -> None:
+        self.sort_reverse = not self.sort_reverse
+        self.refresh_table()
+
+    def action_filter_dirty(self) -> None:
+        self.filter_mode = "dirty"
+        self.refresh_table()
+
+    def action_filter_clean(self) -> None:
+        self.filter_mode = "clean"
+        self.refresh_table()
+
+    def action_filter_all(self) -> None:
+        self.filter_mode = "all"
+        self.refresh_table()
 
 
-@app.command("info")
-def info_repo(
-    path: str = typer.Argument(..., help="Path to the git repository."),
-    output_json: bool = typer.Option(False, "--json", "-j", help="Output as JSON."),
-) -> None:
-    """Show detailed info about a single git repository."""
-    repo_path = Path(path).resolve()
-    details = get_details(repo_path)
-
-    if output_json:
-        console.print(json.dumps(details, indent=2))
-        return
-
-    console.print(f"Repository: {details['name']}")
-    console.print(f"Current branch: {details['branch']}")
-    console.print(f"Local branches: {', '.join(details['local_branches'])}")
-    console.print(f"Remote branches: {', '.join(details['remote_branches'])}")
-    console.print(f"Last commit: {details['last_commit']}")
-    console.print(f"Last fetch: {details['last_fetch'] or 'N/A'}")
-    console.print(f"Authors: {', '.join(details['authors'])}")
+def main() -> None:
+    path = sys.argv[1] if len(sys.argv) > 1 else "."
+    app = GgitApp(path)
+    app.run()

@@ -1,6 +1,6 @@
 # ggit
 
-A CLI to scan directories for git repositories and get a quick overview of their status.
+An interactive TUI to scan directories for git repositories and get a quick overview of their status.
 
 ## Install
 
@@ -10,89 +10,44 @@ uv tool install ggit
 
 ## Usage
 
-### List repositories
-
-Scan the current directory for git repos:
+Launch the TUI scanning the current directory:
 
 ```bash
-ggit list
+ggit
 ```
 
 Scan a specific directory:
 
 ```bash
-ggit list ~/code
+ggit ~/code
 ```
 
-Example output:
+The TUI displays a table of all discovered repositories with their branch, status, origin, PR counts, and last commit date. Use the keyboard to navigate, sort, filter, and view details.
 
-```
-┌──────────┬─────────────────────┬────────┬──────────┬────────────┬─────────────┐
-│ Name     │ Path                │ Branch │ Branches │ Status     │ Last Commit │
-├──────────┼─────────────────────┼────────┼──────────┼────────────┼─────────────┤
-│ my-app   │ /home/user/my-app   │ main   │ 3/5      │ ● 2M 1?   │ 2026-02-25  │
-│ dotfiles │ /home/user/dotfiles │ master │ 1/1      │ ✓          │ 2026-02-20  │
-│ api      │ /home/user/api      │ feat   │ 4/8      │ ● 1+ ↑2   │ 2026-02-27  │
-└──────────┴─────────────────────┴────────┴──────────┴────────────┴─────────────┘
-Found 3 repositories
-```
+### Keybindings
 
-Status symbols: `✓` clean, `M` modified, `+` staged, `?` untracked, `↑` ahead of remote.
+| Key | Action |
+|-----|--------|
+| Enter | Show detailed info for selected repo |
+| s | Cycle sort: Name → Branch → Last Commit |
+| r | Toggle reverse sort |
+| d | Filter: dirty repos only |
+| c | Filter: clean repos only |
+| a | Show all repos (clear filter) |
+| q | Quit |
+| Escape | Back (from detail screen) |
 
-### Filter dirty or clean repos
+### Status symbols
 
-```bash
-# Only repos with uncommitted or unpushed changes
-ggit list ~/code --dirty
+- `✓` clean
+- `M` modified
+- `+` staged
+- `?` untracked
+- `↑` ahead of remote
 
-# Only clean repos
-ggit list ~/code --clean
-```
+### Detail screen
 
-### Filter by branch count
-
-```bash
-# Repos with at least 5 local branches (time to clean up?)
-ggit list ~/code --min-local-branches 5
-```
-
-### Sort and reverse
-
-```bash
-ggit list ~/code --sort date --reverse
-```
-
-Sort by `name` (default), `branch`, or `date`.
-
-### Output as JSON
-
-```bash
-ggit list ~/code --json
-```
-
-### Quiet mode
-
-Output only repository paths, useful for piping:
-
-```bash
-ggit list ~/code --dirty --quiet | xargs -I{} git -C {} status
-```
-
-### Get detailed info on a single repo
-
-```bash
-ggit info ./my-project
-```
-
-```
-Repository: my-project
-Current branch: main
-Local branches: main, feat/auth, fix/typo
-Remote branches: origin/main, origin/feat/auth
-Last commit: 2026-02-27
-Last fetch: 2026-02-26
-Authors: Alice, Bob
-```
+Press Enter on any repo to see detailed info: branches, last fetch, and authors. Press Escape to go back.
 
 ## License
 
