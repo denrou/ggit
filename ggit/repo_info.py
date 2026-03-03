@@ -70,6 +70,33 @@ def format_status(summary: dict) -> str:
     return " ".join(parts)
 
 
+def fetch_repo(path: Path) -> dict:
+    """Fetch from origin. Returns {path, name, ok, error}."""
+    name = path.name
+    try:
+        repo = Repo(path)
+        if not repo.remotes:
+            return {"path": str(path), "name": name, "ok": False, "error": "no remotes"}
+        repo.remotes.origin.fetch()
+        return {"path": str(path), "name": name, "ok": True, "error": None}
+    except Exception as e:
+        return {"path": str(path), "name": name, "ok": False, "error": str(e)}
+
+
+def prune_repo(path: Path) -> dict:
+    """Prune stale remote-tracking branches. Returns {path, name, ok, pruned, error}."""
+    name = path.name
+    try:
+        repo = Repo(path)
+        if not repo.remotes:
+            return {"path": str(path), "name": name, "ok": False, "pruned": None, "error": "no remotes"}
+        output = repo.git.remote("prune", "origin")
+        pruned = [line.strip() for line in output.splitlines() if line.strip()] if output else []
+        return {"path": str(path), "name": name, "ok": True, "pruned": pruned, "error": None}
+    except Exception as e:
+        return {"path": str(path), "name": name, "ok": False, "pruned": None, "error": str(e)}
+
+
 def get_details(path: Path) -> dict:
     """Return detailed information about a repository."""
     repo = Repo(path)

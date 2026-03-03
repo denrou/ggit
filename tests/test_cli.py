@@ -115,7 +115,8 @@ async def test_filter_dirty(mock_find, mock_summary, mock_prs):
         table = pilot.app.query_one("#repo-table")
         assert table.row_count == 1
         values = _get_table_row_values(table, 0)
-        assert values[0] == "dirty-repo"
+        # Column 0 is marker, column 1 is name
+        assert values[1] == "dirty-repo"
         assert pilot.app.filter_mode == "dirty"
 
 
@@ -130,7 +131,8 @@ async def test_filter_clean(mock_find, mock_summary, mock_prs):
         await pilot.pause()
         table = pilot.app.query_one("#repo-table")
         assert table.row_count == 2
-        names = [_get_table_row_values(table, i)[0] for i in range(table.row_count)]
+        # Column 1 is name (column 0 is marker)
+        names = [_get_table_row_values(table, i)[1] for i in range(table.row_count)]
         assert "clean-repo" in names
         assert "branches-repo" in names
         assert "dirty-repo" not in names
@@ -190,7 +192,7 @@ async def test_reverse_sort(mock_find, mock_summary, mock_prs):
 
         # Check order is reversed (name desc: dirty > clean > branches)
         table = pilot.app.query_one("#repo-table")
-        first = _get_table_row_values(table, 0)[0]
+        first = _get_table_row_values(table, 0)[1]  # column 1 is name
         assert first == "dirty-repo"
 
 
@@ -242,12 +244,11 @@ async def test_pr_counts_displayed(mock_find, mock_summary, mock_prs):
         for _ in range(100):
             await pilot.pause()
             values = _get_table_row_values(table, 0)
-            # PRs column is index 5
-            if values[5] == "5/2":
+            # PRs column is index 6 (shifted by marker column)
+            if values[6] == "5/2":
                 break
-        # clean-repo (first alphabetically) should have PR counts
         values = _get_table_row_values(table, 0)
-        assert values[0] == "branches-repo" or values[5] == "5/2"
+        assert values[1] == "branches-repo" or values[6] == "5/2"
 
 
 @pytest.mark.asyncio
@@ -258,3 +259,111 @@ async def test_quit(mock_find, mock_summary, mock_prs):
     async with _make_app().run_test(size=(120, 30)) as pilot:
         await _wait_for_table(pilot)
         await pilot.press("q")
+
+
+# --- Selection tests ---
+
+
+@pytest.mark.asyncio
+@patch("ggit.cli.get_github_pr_counts", return_value=None)
+@patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
+@patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
+async def test_toggle_select(mock_find, mock_summary, mock_prs):
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        app = pilot.app
+        assert len(app.selected_paths) == 0
+
+        # Space toggles the cursor row
+        await pilot.press("space")
+        await pilot.pause()
+        assert len(app.selected_paths) == 1
+
+        # Marker column should show "●"
+        table = app.query_one("#repo-table")
+        values = _get_table_row_values(table, 0)
+        assert values[0] == "●"
+
+        # Space again deselects
+        await pilot.press("space")
+        await pilot.pause()
+        assert len(app.selected_paths) == 0
+        values = _get_table_row_values(table, 0)
+        assert values[0] == " "
+
+
+@pytest.mark.asyncio
+@patch("ggit.cli.get_github_pr_counts", return_value=None)
+@patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
+@patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
+async def test_toggle_all(mock_find, mock_summary, mock_prs):
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        app = pilot.app
+        assert len(app.selected_paths) == 0
+
+        # x selects all visible rows
+        await pilot.press("x")
+        await pilot.pause()
+        assert len(app.selected_paths) == 3
+
+        # x again deselects all
+        await pilot.press("x")
+        await pilot.pause()
+        assert len(app.selected_paths) == 0
+
+
+@pytest.mark.asyncio
+@patch("ggit.cli.get_github_pr_counts", return_value=None)
+@patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
+@patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
+async def test_selection_survives_sort(mock_find, mock_summary, mock_prs):
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        app = pilot.app
+
+        # Select first row (branches-repo, sorted by name asc)
+        await pilot.press("space")
+        await pilot.pause()
+        first_path = app.filtered_summaries[0]["path"]
+        assert first_path in app.selected_paths
+
+        # Change sort — selection should persist
+        await pilot.press("s")
+        await pilot.pause()
+        assert first_path in app.selected_paths
+        assert len(app.selected_paths) == 1
+
+
+@pytest.mark.asyncio
+@patch("ggit.cli.fetch_repo", return_value={"path": "/tmp/dirty-repo", "name": "dirty-repo", "ok": True, "error": None})
+@patch("ggit.cli.get_github_pr_counts", return_value=None)
+@patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
+@patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
+async def test_fetch_on_cursor(mock_find, mock_summary, mock_prs, mock_fetch):
+    """Fetch with no selection operates on the cursor row."""
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        app = pilot.app
+        assert len(app.selected_paths) == 0
+
+        # Press f with no selection — should fetch cursor row
+        await pilot.press("f")
+        for _ in range(100):
+            await pilot.pause()
+        assert mock_fetch.called
+
+
+@pytest.mark.asyncio
+@patch("ggit.cli.get_github_pr_counts", return_value=None)
+@patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
+@patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
+async def test_status_bar_shows_selection_count(mock_find, mock_summary, mock_prs):
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        app = pilot.app
+        status_bar = app.query_one("#status-bar")
+
+        await pilot.press("space")
+        await pilot.pause()
+        assert "1 selected" in str(status_bar.render())

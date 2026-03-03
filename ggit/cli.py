@@ -9,16 +9,18 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Label, LoadingIndicator, Static
 
 from ggit.repo_info import (
+    fetch_repo,
     format_status,
     get_details,
     get_github_pr_counts,
     get_summary,
     is_dirty,
     parse_github_repo,
+    prune_repo,
 )
 from ggit.scanner import find_repos
 
-COLUMNS = ["Name", "Branch", "Status", "Local", "Remote", "Open PRs", "My PRs", "Last Commit"]
+COLUMNS = ["", "Name", "Branch", "Status", "Local", "Remote", "Open PRs", "My PRs", "Last Commit"]
 SORT_KEYS = ["name", "branch", "last_commit"]
 SORT_LABELS = ["Name", "Branch", "Last Commit"]
 
@@ -79,6 +81,10 @@ class GgitApp(App):
     TITLE = "ggit"
 
     BINDINGS = [
+        Binding("space", "toggle_select", "Select", show=True),
+        Binding("x", "toggle_all", "Sel All", show=True),
+        Binding("f", "fetch", "Fetch", show=True),
+        Binding("p", "prune", "Prune", show=True),
         Binding("s", "cycle_sort", "Sort", show=True),
         Binding("r", "toggle_reverse", "Reverse", show=True),
         Binding("d", "filter_dirty", "Dirty", show=True),
@@ -95,13 +101,14 @@ class GgitApp(App):
         self.sort_column = "name"
         self.sort_reverse = False
         self.filter_mode = "all"
+        self.selected_paths: set[str] = set()
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield LoadingIndicator(id="loading")
         table = DataTable(id="repo-table", cursor_type="row")
         for col in COLUMNS:
-            table.add_column(col, key=col.lower().replace(" ", "_"))
+            table.add_column(col, key=col.lower().replace(" ", "_") if col else "sel")
         yield table
         yield Static("", id="status-bar")
         yield Footer()
@@ -185,28 +192,142 @@ class GgitApp(App):
         # Rebuild table
         table.clear()
         for s in filtered:
+            marker = "●" if s["path"] in self.selected_paths else " "
             status = format_status(s)
             open_prs = str(s["open_prs"]) if s.get("open_prs") is not None else ""
             my_prs = str(s["my_prs"]) if s.get("my_prs") is not None else ""
             table.add_row(
+                marker,
                 s["name"], s["branch"], status,
                 str(s["local_branches"]), str(s["remote_branches"]),
                 open_prs, my_prs, s["last_commit"],
+                key=s["path"],
             )
 
         # Status bar
         sort_label = SORT_LABELS[SORT_KEYS.index(self.sort_column)]
         direction = "desc" if self.sort_reverse else "asc"
         filter_text = f" | Filter: {self.filter_mode}" if self.filter_mode != "all" else ""
+        sel_count = len(self.selected_paths)
+        sel_text = f" | {sel_count} selected" if sel_count else ""
         status_bar.update(
-            f" {len(filtered)} repos | Sort: {sort_label} ({direction}){filter_text}"
+            f" {len(filtered)} repos | Sort: {sort_label} ({direction}){filter_text}{sel_text}"
         )
+
+    def _get_cursor_path(self) -> str | None:
+        """Return the path of the row under the cursor, or None."""
+        table = self.query_one("#repo-table", DataTable)
+        if table.row_count == 0:
+            return None
+        idx = table.cursor_row
+        if 0 <= idx < len(self.filtered_summaries):
+            return self.filtered_summaries[idx]["path"]
+        return None
+
+    def _get_target_paths(self) -> list[str]:
+        """Return selected paths, or the cursor row path if nothing is selected."""
+        if self.selected_paths:
+            return list(self.selected_paths)
+        path = self._get_cursor_path()
+        return [path] if path else []
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         table = self.query_one("#repo-table", DataTable)
         idx = table.get_row_index(event.row_key)
         if 0 <= idx < len(self.filtered_summaries):
             self.push_screen(DetailScreen(self.filtered_summaries[idx]))
+
+    def action_toggle_select(self) -> None:
+        path = self._get_cursor_path()
+        if path is None:
+            return
+        if path in self.selected_paths:
+            self.selected_paths.discard(path)
+        else:
+            self.selected_paths.add(path)
+        self.refresh_table()
+
+    def action_toggle_all(self) -> None:
+        visible = {s["path"] for s in self.filtered_summaries}
+        if visible <= self.selected_paths:
+            # All visible are selected → deselect them
+            self.selected_paths -= visible
+        else:
+            self.selected_paths |= visible
+        self.refresh_table()
+
+    def action_fetch(self) -> None:
+        paths = self._get_target_paths()
+        if not paths:
+            return
+        self.notify(f"Fetching {len(paths)} repo(s)...")
+        self._run_fetch(paths)
+
+    @work(thread=True)
+    def _run_fetch(self, paths: list[str]) -> None:
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            results = list(executor.map(lambda p: fetch_repo(Path(p)), paths))
+
+        ok = sum(1 for r in results if r["ok"])
+        failed = len(results) - ok
+
+        # Refresh summaries for affected repos
+        for r in results:
+            if r["ok"]:
+                try:
+                    new_summary = get_summary(Path(r["path"]))
+                    for i, s in enumerate(self.summaries):
+                        if s["path"] == r["path"]:
+                            # Preserve PR fields
+                            for key in ("github_repo", "open_prs", "my_prs"):
+                                new_summary[key] = s.get(key)
+                            self.summaries[i] = new_summary
+                            break
+                except Exception:
+                    pass
+
+        msg = f"Fetch done: {ok} ok"
+        if failed:
+            msg += f", {failed} failed"
+        self.call_from_thread(self._finish_operation, msg)
+
+    def action_prune(self) -> None:
+        paths = self._get_target_paths()
+        if not paths:
+            return
+        self.notify(f"Pruning {len(paths)} repo(s)...")
+        self._run_prune(paths)
+
+    @work(thread=True)
+    def _run_prune(self, paths: list[str]) -> None:
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            results = list(executor.map(lambda p: prune_repo(Path(p)), paths))
+
+        ok = sum(1 for r in results if r["ok"])
+        failed = len(results) - ok
+
+        # Refresh summaries for affected repos
+        for r in results:
+            if r["ok"]:
+                try:
+                    new_summary = get_summary(Path(r["path"]))
+                    for i, s in enumerate(self.summaries):
+                        if s["path"] == r["path"]:
+                            for key in ("github_repo", "open_prs", "my_prs"):
+                                new_summary[key] = s.get(key)
+                            self.summaries[i] = new_summary
+                            break
+                except Exception:
+                    pass
+
+        msg = f"Prune done: {ok} ok"
+        if failed:
+            msg += f", {failed} failed"
+        self.call_from_thread(self._finish_operation, msg)
+
+    def _finish_operation(self, msg: str) -> None:
+        self.notify(msg)
+        self.refresh_table()
 
     def action_cycle_sort(self) -> None:
         current = SORT_KEYS.index(self.sort_column)

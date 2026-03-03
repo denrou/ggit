@@ -6,7 +6,7 @@ import pytest
 
 from unittest.mock import patch
 
-from ggit.repo_info import format_status, get_details, get_github_pr_counts, get_summary, is_dirty, parse_github_repo
+from ggit.repo_info import fetch_repo, format_status, get_details, get_github_pr_counts, get_summary, is_dirty, parse_github_repo, prune_repo
 
 
 @pytest.fixture()
@@ -107,6 +107,35 @@ def test_parse_github_repo_not_github():
 
 def test_parse_github_repo_non_url():
     assert parse_github_repo("/local/path/to/repo") is None
+
+
+def test_fetch_repo_no_origin(tmp_repo: Path):
+    """fetch_repo returns ok=False when there are no remotes."""
+    result = fetch_repo(tmp_repo)
+    assert result["ok"] is False
+    assert result["error"] == "no remotes"
+    assert result["name"] == "test-repo"
+
+
+def test_prune_repo_no_origin(tmp_repo: Path):
+    """prune_repo returns ok=False when there are no remotes."""
+    result = prune_repo(tmp_repo)
+    assert result["ok"] is False
+    assert result["error"] == "no remotes"
+    assert result["name"] == "test-repo"
+    assert result["pruned"] is None
+
+
+def test_fetch_repo_invalid_path():
+    result = fetch_repo(Path("/nonexistent/repo"))
+    assert result["ok"] is False
+    assert result["error"] is not None
+
+
+def test_prune_repo_invalid_path():
+    result = prune_repo(Path("/nonexistent/repo"))
+    assert result["ok"] is False
+    assert result["error"] is not None
 
 
 @patch("ggit.repo_info.subprocess.run")
