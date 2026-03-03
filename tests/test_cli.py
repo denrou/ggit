@@ -261,6 +261,32 @@ async def test_quit(mock_find, mock_summary, mock_prs):
         await pilot.press("q")
 
 
+# --- Vim navigation tests ---
+
+
+@pytest.mark.asyncio
+@patch("ggit.cli.get_github_pr_counts", return_value=None)
+@patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
+@patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
+async def test_jk_navigation(mock_find, mock_summary, mock_prs):
+    async with _make_app().run_test(size=(120, 30)) as pilot:
+        await _wait_for_table(pilot)
+        table = pilot.app.query_one("#repo-table")
+        assert table.cursor_row == 0
+
+        await pilot.press("j")
+        await pilot.pause()
+        assert table.cursor_row == 1
+
+        await pilot.press("j")
+        await pilot.pause()
+        assert table.cursor_row == 2
+
+        await pilot.press("k")
+        await pilot.pause()
+        assert table.cursor_row == 1
+
+
 # --- Selection tests ---
 
 

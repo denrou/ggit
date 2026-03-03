@@ -81,6 +81,8 @@ class GgitApp(App):
     TITLE = "ggit"
 
     BINDINGS = [
+        Binding("j", "cursor_down", "Down", show=False),
+        Binding("k", "cursor_up", "Up", show=False),
         Binding("space", "toggle_select", "Select", show=True),
         Binding("x", "toggle_all", "Sel All", show=True),
         Binding("f", "fetch", "Fetch", show=True),
@@ -236,6 +238,14 @@ class GgitApp(App):
         idx = table.get_row_index(event.row_key)
         if 0 <= idx < len(self.filtered_summaries):
             self.push_screen(DetailScreen(self.filtered_summaries[idx]))
+
+    def action_cursor_down(self) -> None:
+        table = self.query_one("#repo-table", DataTable)
+        table.action_cursor_down()
+
+    def action_cursor_up(self) -> None:
+        table = self.query_one("#repo-table", DataTable)
+        table.action_cursor_up()
 
     def action_toggle_select(self) -> None:
         path = self._get_cursor_path()
