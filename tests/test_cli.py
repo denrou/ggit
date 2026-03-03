@@ -197,7 +197,9 @@ async def test_reverse_sort(mock_find, mock_summary, mock_prs):
 @pytest.mark.asyncio
 @patch("ggit.cli.get_details", return_value={
     "name": "branches-repo",
+    "path": "/tmp/repos/branches-repo",
     "branch": "main",
+    "origin": "git@github.com:user/branches-repo.git",
     "local_branches": ["main", "dev"],
     "remote_branches": ["origin/main"],
     "last_commit": "2025-03-10",

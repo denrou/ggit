@@ -18,7 +18,7 @@ from ggit.repo_info import (
 )
 from ggit.scanner import find_repos
 
-COLUMNS = ["Name", "Branch", "Status", "Branches", "Origin", "PRs", "Last Commit"]
+COLUMNS = ["Name", "Branch", "Status", "Branches", "PRs", "Last Commit"]
 SORT_KEYS = ["name", "branch", "last_commit"]
 SORT_LABELS = ["Name", "Branch", "Last Commit"]
 
@@ -58,7 +58,9 @@ class DetailScreen(Screen):
         label = self.query_one("#detail-content", Label)
         lines = [
             f"Repository: {details['name']}",
+            f"Path: {details['path']}",
             f"Current branch: {details['branch']}",
+            f"Origin: {details['origin'] or 'N/A'}",
             f"Local branches: {', '.join(details['local_branches'])}",
             f"Remote branches: {', '.join(details['remote_branches'])}",
             f"Last commit: {details['last_commit']}",
@@ -185,20 +187,13 @@ class GgitApp(App):
         for s in filtered:
             branches = f"{s['local_branches']}/{s['remote_branches']}"
             status = format_status(s)
-            gh_repo = s.get("github_repo")
-            if gh_repo:
-                origin_display = gh_repo
-            elif s.get("origin"):
-                origin_display = s["origin"]
-            else:
-                origin_display = ""
             if s.get("open_prs") is not None:
                 prs_display = f"{s['open_prs']}/{s['my_prs']}"
             else:
                 prs_display = ""
             table.add_row(
                 s["name"], s["branch"], status, branches,
-                origin_display, prs_display, s["last_commit"],
+                prs_display, s["last_commit"],
             )
 
         # Status bar

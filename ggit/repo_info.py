@@ -98,9 +98,16 @@ def get_details(path: Path) -> dict:
             if len(parts) == 2:
                 authors.append(parts[1])
 
+    try:
+        origin = repo.remotes.origin.url
+    except (AttributeError, ValueError):
+        origin = None
+
     return {
         "name": path.name,
+        "path": str(path),
         "branch": branch,
+        "origin": origin,
         "local_branches": local_branches,
         "remote_branches": remote_branches,
         "last_commit": last_commit,

@@ -4,6 +4,14 @@ An interactive TUI to scan directories for git repositories and get a quick over
 
 ## Install
 
+### Homebrew
+
+```bash
+brew install denrou/ggit/ggit
+```
+
+### pip / uv
+
 ```bash
 uv tool install ggit
 ```
