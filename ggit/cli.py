@@ -18,7 +18,7 @@ from ggit.repo_info import (
 )
 from ggit.scanner import find_repos
 
-COLUMNS = ["Name", "Branch", "Status", "Branches", "PRs", "Last Commit"]
+COLUMNS = ["Name", "Branch", "Status", "Local", "Remote", "Open PRs", "My PRs", "Last Commit"]
 SORT_KEYS = ["name", "branch", "last_commit"]
 SORT_LABELS = ["Name", "Branch", "Last Commit"]
 
@@ -185,15 +185,13 @@ class GgitApp(App):
         # Rebuild table
         table.clear()
         for s in filtered:
-            branches = f"{s['local_branches']}/{s['remote_branches']}"
             status = format_status(s)
-            if s.get("open_prs") is not None:
-                prs_display = f"{s['open_prs']}/{s['my_prs']}"
-            else:
-                prs_display = ""
+            open_prs = str(s["open_prs"]) if s.get("open_prs") is not None else ""
+            my_prs = str(s["my_prs"]) if s.get("my_prs") is not None else ""
             table.add_row(
-                s["name"], s["branch"], status, branches,
-                prs_display, s["last_commit"],
+                s["name"], s["branch"], status,
+                str(s["local_branches"]), str(s["remote_branches"]),
+                open_prs, my_prs, s["last_commit"],
             )
 
         # Status bar
