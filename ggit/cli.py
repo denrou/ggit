@@ -121,14 +121,18 @@ class GgitApp(App):
 
     @work(thread=True)
     def load_repos(self) -> None:
-        # Phase 1: scan and get summaries
+        # Phase 1: scan and get summaries (parallel)
         repos = find_repos(self.scan_path)
-        summaries = []
-        for repo_path in repos:
+
+        def _safe_summary(repo_path):
             try:
-                summaries.append(get_summary(repo_path))
+                return get_summary(repo_path)
             except Exception:
-                pass
+                return None
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = executor.map(_safe_summary, repos)
+        summaries = [s for s in results if s is not None]
         self.summaries = summaries
         self.call_from_thread(self._phase1_done)
 
