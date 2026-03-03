@@ -27,7 +27,7 @@ uv run pytest tests/test_cli.py::test_function_name -v
 Three modules under `ggit/`:
 
 - **`cli.py`** — Textual TUI app with two screens: `MainScreen` (DataTable with repo list, keybindings for sort/filter) and `DetailScreen` (single repo details, pushed on Enter). `GgitApp` manages state and two-phase background loading (scan + PR counts). Entry point: `main()`.
-- **`repo_info.py`** — Repository data extraction using GitPython. `get_summary()` returns short status (modified/staged/untracked/ahead counts), `get_details()` returns full info (authors, branches). Also handles GitHub URL parsing and PR count fetching via `gh` CLI.
+- **`repo_info.py`** — Repository data extraction using GitPython. `get_summary()` returns short status (modified/staged/untracked/ahead counts), `get_details()` returns full info (authors, branches), `fetch_repo()` and `prune_repo()` run git fetch/prune and return result dicts. Also handles GitHub URL parsing and PR count fetching via `gh` CLI.
 - **`scanner.py`** — `find_repos(path)` walks directory trees to discover `.git` folders, skipping hidden directories and pruning nested repos.
 - **`app.css`** — Textual CSS for screen layouts.
 
@@ -44,7 +44,12 @@ Three modules under `ggit/`:
 
 | Key | Action |
 |-----|--------|
+| j / k | Move cursor down / up |
 | Enter | Show details for selected repo |
+| Space | Toggle select current row |
+| x | Toggle select all visible rows |
+| f | Fetch selected repos (or cursor row) |
+| p | Prune selected repos (or cursor row) |
 | s | Cycle sort: Name → Branch → Last Commit |
 | r | Toggle reverse sort |
 | d | Filter dirty repos only |

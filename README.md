@@ -36,7 +36,12 @@ The TUI displays a table of all discovered repositories with their branch, statu
 
 | Key | Action |
 |-----|--------|
+| j / k | Move cursor down / up |
 | Enter | Show detailed info for selected repo |
+| Space | Toggle select current row |
+| x | Toggle select all visible rows |
+| f | Fetch selected repos (or cursor row) |
+| p | Prune selected repos (or cursor row) |
 | s | Cycle sort: Name → Branch → Last Commit |
 | r | Toggle reverse sort |
 | d | Filter: dirty repos only |
