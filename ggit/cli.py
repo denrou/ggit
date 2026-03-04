@@ -1,6 +1,8 @@
+import argparse
 import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from importlib.metadata import version as pkg_version
 from pathlib import Path
 
 from textual import work
@@ -367,6 +369,18 @@ class GgitApp(App):
 
 
 def main() -> None:
-    path = sys.argv[1] if len(sys.argv) > 1 else "."
-    app = GgitApp(path)
+    parser = argparse.ArgumentParser(
+        prog="ggit",
+        description="Scan directories for git repositories and display an interactive overview.",
+    )
+    parser.add_argument(
+        "path", nargs="?", default=".",
+        help="root directory to scan (default: current directory)",
+    )
+    parser.add_argument(
+        "--version", action="version",
+        version=f"%(prog)s {pkg_version('ggit')}",
+    )
+    args = parser.parse_args()
+    app = GgitApp(args.path)
     app.run()
