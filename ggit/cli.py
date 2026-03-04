@@ -72,10 +72,16 @@ class DetailScreen(Screen):
             f"Remote branches: {', '.join(details.remote_branches)}",
             f"Last commit: {details.last_commit}",
             f"Last fetch: {details.last_fetch or 'N/A'}",
-            f"Authors: {', '.join(details.authors)}",
+            f"Authors: {self._format_authors(details.authors)}",
         ]
         self.detail_text = "\n".join(lines)
         label.update(self.detail_text)
+
+    @staticmethod
+    def _format_authors(authors: list[str], limit: int = 10) -> str:
+        if len(authors) <= limit:
+            return ", ".join(authors)
+        return ", ".join(authors[:limit]) + f" (and {len(authors) - limit} more)"
 
     def action_go_back(self) -> None:
         self.app.pop_screen()
