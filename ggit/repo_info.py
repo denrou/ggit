@@ -9,9 +9,20 @@ from git import Repo
 
 def get_summary(path: Path) -> dict:
     """Return a short summary for a repository: name, branch, last commit date, branch counts, and status."""
-    repo = Repo(path)
-    branch = repo.active_branch.name if not repo.head.is_detached else "HEAD"
-    last_commit = repo.head.commit.committed_datetime.strftime("%Y-%m-%d")
+    try:
+        repo = Repo(path)
+    except Exception as e:
+        raise ValueError(f"Cannot open repository at {path}: {e}") from e
+
+    try:
+        branch = repo.active_branch.name if not repo.head.is_detached else "HEAD"
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"Cannot determine branch for {path}: {e}") from e
+
+    try:
+        last_commit = repo.head.commit.committed_datetime.strftime("%Y-%m-%d")
+    except ValueError as e:
+        raise ValueError(f"Cannot read commits for {path}: {e}") from e
 
     local_branches = len(repo.branches)
     remote_branches = len([r for r in repo.refs if r.is_remote()])
@@ -99,8 +110,15 @@ def prune_repo(path: Path) -> dict:
 
 def get_details(path: Path) -> dict:
     """Return detailed information about a repository."""
-    repo = Repo(path)
-    branch = repo.active_branch.name if not repo.head.is_detached else "HEAD"
+    try:
+        repo = Repo(path)
+    except Exception as e:
+        raise ValueError(f"Cannot open repository at {path}: {e}") from e
+
+    try:
+        branch = repo.active_branch.name if not repo.head.is_detached else "HEAD"
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"Cannot determine branch for {path}: {e}") from e
     local_branches = [b.name for b in repo.branches]
     remote_branches = [r.name for r in repo.refs if r.is_remote()]
     last_commit = repo.head.commit.committed_datetime.strftime("%Y-%m-%d")
