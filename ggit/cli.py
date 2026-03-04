@@ -1,3 +1,4 @@
+import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -19,6 +20,8 @@ from ggit.repo_info import (
     prune_repo,
 )
 from ggit.scanner import find_repos
+
+logger = logging.getLogger(__name__)
 
 COLUMNS = ["", "Name", "Branch", "Status", "Local", "Remote", "Open PRs", "My PRs", "Last Commit"]
 SORT_KEYS = ["name", "branch", "last_commit"]
@@ -128,6 +131,7 @@ class GgitApp(App):
             try:
                 return get_summary(repo_path)
             except Exception:
+                logger.warning("Failed to read repository: %s", repo_path, exc_info=True)
                 return None
 
         with ThreadPoolExecutor(max_workers=8) as executor:
