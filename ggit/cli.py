@@ -303,7 +303,8 @@ class GgitApp(App):
 
         msg = f"Fetch done: {ok} ok"
         if failed:
-            msg += f", {failed} failed"
+            errors = [f"{r.name}: {r.error}" for r in results if not r.ok]
+            msg += f", {failed} failed ({'; '.join(errors)})"
         self.call_from_thread(self._finish_operation, msg)
 
     def action_prune(self) -> None:
@@ -338,7 +339,8 @@ class GgitApp(App):
 
         msg = f"Prune done: {ok} ok"
         if failed:
-            msg += f", {failed} failed"
+            errors = [f"{r.name}: {r.error}" for r in results if not r.ok]
+            msg += f", {failed} failed ({'; '.join(errors)})"
         self.call_from_thread(self._finish_operation, msg)
 
     def _finish_operation(self, msg: str) -> None:
