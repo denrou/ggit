@@ -174,3 +174,53 @@ def test_get_github_pr_counts_failure(mock_run):
     mock_run.return_value = type("Result", (), {"returncode": 1, "stdout": ""})()
     result = get_github_pr_counts("acme/myrepo")
     assert result is None
+
+
+def test_get_summary_invalid_path():
+    """get_summary raises ValueError for a nonexistent path."""
+    with pytest.raises(ValueError, match="Cannot open repository"):
+        get_summary(Path("/nonexistent/repo"))
+
+
+def test_get_details_invalid_path():
+    """get_details raises ValueError for a nonexistent path."""
+    with pytest.raises(ValueError, match="Cannot open repository"):
+        get_details(Path("/nonexistent/repo"))
+
+
+def test_get_summary_detached_head(tmp_repo: Path):
+    """get_summary returns HEAD as branch for detached HEAD state."""
+    env = {**os.environ, "GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "t@t.com",
+           "GIT_COMMITTER_NAME": "Test", "GIT_COMMITTER_EMAIL": "t@t.com"}
+    # Create a second commit and detach HEAD at it
+    (tmp_repo / "file2.txt").write_text("content")
+    subprocess.run(["git", "add", "."], cwd=tmp_repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "second"], cwd=tmp_repo, check=True, capture_output=True, env=env)
+    commit_hash = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_repo, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    subprocess.run(["git", "checkout", commit_hash], cwd=tmp_repo, check=True, capture_output=True)
+    result = get_summary(tmp_repo)
+    assert result.branch == "HEAD"
+
+
+def test_get_details_detached_head(tmp_repo: Path):
+    """get_details returns HEAD as branch for detached HEAD state."""
+    env = {**os.environ, "GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "t@t.com",
+           "GIT_COMMITTER_NAME": "Test", "GIT_COMMITTER_EMAIL": "t@t.com"}
+    (tmp_repo / "file2.txt").write_text("content")
+    subprocess.run(["git", "add", "."], cwd=tmp_repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "second"], cwd=tmp_repo, check=True, capture_output=True, env=env)
+    commit_hash = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_repo, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    subprocess.run(["git", "checkout", commit_hash], cwd=tmp_repo, check=True, capture_output=True)
+    result = get_details(tmp_repo)
+    assert result.branch == "HEAD"
+
+
+def test_fetch_result_has_pruned_field():
+    """FetchResult has a pruned field (defaults to None) for structural parity with PruneResult."""
+    result = fetch_repo(Path("/nonexistent/repo"))
+    assert hasattr(result, "pruned")
+    assert result.pruned is None

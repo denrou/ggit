@@ -1,3 +1,4 @@
+import subprocess
 from copy import copy
 from pathlib import Path
 from unittest.mock import patch
@@ -5,7 +6,7 @@ from unittest.mock import patch
 import pytest
 from textual.coordinate import Coordinate
 
-from ggit.cli import GgitApp
+from ggit.cli import DetailScreen, GgitApp
 from ggit.repo_info import RepoDetails, RepoSummary, FetchResult
 
 CLEAN_REPO = RepoSummary(
@@ -395,3 +396,33 @@ async def test_status_bar_shows_selection_count(mock_find, mock_summary, mock_pr
         await pilot.press("space")
         await pilot.pause()
         assert "1 selected" in str(status_bar.render())
+
+
+# --- argparse tests ---
+
+
+def test_version_flag():
+    """--version prints the version and exits."""
+    result = subprocess.run(
+        ["uv", "run", "ggit", "--version"],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0
+    assert "ggit" in result.stdout
+
+
+# --- Authors truncation tests ---
+
+
+def test_format_authors_short():
+    authors = ["Alice", "Bob", "Charlie"]
+    assert DetailScreen._format_authors(authors) == "Alice, Bob, Charlie"
+
+
+def test_format_authors_truncated():
+    authors = [f"Author{i}" for i in range(15)]
+    result = DetailScreen._format_authors(authors)
+    assert "(and 5 more)" in result
+    assert "Author0" in result
+    assert "Author9" in result
+    assert "Author10" not in result
