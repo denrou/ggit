@@ -396,10 +396,11 @@ wheels = [
 
 [[package]]
 name = "ggit"
-version = "0.3.0"
+version = "0.5.1"
 source = { editable = "." }
 dependencies = [
     { name = "gitpython" },
+    { name = "rich" },
     { name = "textual" },
 ]
 
@@ -415,6 +416,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "gitpython" },
+    { name = "rich" },
     { name = "textual" },
 ]
 
