@@ -1,3 +1,4 @@
+from copy import copy
 from pathlib import Path
 from unittest.mock import patch
 
@@ -5,60 +6,61 @@ import pytest
 from textual.coordinate import Coordinate
 
 from ggit.cli import GgitApp
+from ggit.repo_info import RepoDetails, RepoSummary, FetchResult
 
-CLEAN_REPO = {
-    "name": "clean-repo",
-    "path": "/tmp/clean-repo",
-    "branch": "main",
-    "last_commit": "2025-01-01",
-    "local_branches": 1,
-    "remote_branches": 1,
-    "modified": 0,
-    "staged": 0,
-    "untracked": 0,
-    "ahead": 0,
-    "origin": "https://github.com/acme/clean-repo.git",
-}
+CLEAN_REPO = RepoSummary(
+    name="clean-repo",
+    path="/tmp/clean-repo",
+    branch="main",
+    last_commit="2025-01-01",
+    local_branches=1,
+    remote_branches=1,
+    modified=0,
+    staged=0,
+    untracked=0,
+    ahead=0,
+    origin="https://github.com/acme/clean-repo.git",
+)
 
-DIRTY_REPO = {
-    "name": "dirty-repo",
-    "path": "/tmp/dirty-repo",
-    "branch": "dev",
-    "last_commit": "2025-06-15",
-    "local_branches": 5,
-    "remote_branches": 3,
-    "modified": 2,
-    "staged": 1,
-    "untracked": 0,
-    "ahead": 0,
-    "origin": "https://gitlab.com/acme/dirty-repo.git",
-}
+DIRTY_REPO = RepoSummary(
+    name="dirty-repo",
+    path="/tmp/dirty-repo",
+    branch="dev",
+    last_commit="2025-06-15",
+    local_branches=5,
+    remote_branches=3,
+    modified=2,
+    staged=1,
+    untracked=0,
+    ahead=0,
+    origin="https://gitlab.com/acme/dirty-repo.git",
+)
 
-MANY_BRANCHES_REPO = {
-    "name": "branches-repo",
-    "path": "/tmp/branches-repo",
-    "branch": "main",
-    "last_commit": "2025-03-10",
-    "local_branches": 10,
-    "remote_branches": 8,
-    "modified": 0,
-    "staged": 0,
-    "untracked": 0,
-    "ahead": 0,
-    "origin": None,
-}
+MANY_BRANCHES_REPO = RepoSummary(
+    name="branches-repo",
+    path="/tmp/branches-repo",
+    branch="main",
+    last_commit="2025-03-10",
+    local_branches=10,
+    remote_branches=8,
+    modified=0,
+    staged=0,
+    untracked=0,
+    ahead=0,
+    origin=None,
+)
 
 ALL_SUMMARIES = [CLEAN_REPO, DIRTY_REPO, MANY_BRANCHES_REPO]
 
 
 def _mock_find_repos(path):
-    return [Path(s["path"]) for s in ALL_SUMMARIES]
+    return [Path(s.path) for s in ALL_SUMMARIES]
 
 
 def _mock_get_summary(path):
     for s in ALL_SUMMARIES:
-        if s["path"] == str(path):
-            return dict(s)
+        if s.path == str(path):
+            return copy(s)
     raise ValueError(f"Unknown path: {path}")
 
 
@@ -197,17 +199,17 @@ async def test_reverse_sort(mock_find, mock_summary, mock_prs):
 
 
 @pytest.mark.asyncio
-@patch("ggit.cli.get_details", return_value={
-    "name": "branches-repo",
-    "path": "/tmp/repos/branches-repo",
-    "branch": "main",
-    "origin": "git@github.com:user/branches-repo.git",
-    "local_branches": ["main", "dev"],
-    "remote_branches": ["origin/main"],
-    "last_commit": "2025-03-10",
-    "last_fetch": "2025-03-09",
-    "authors": ["Alice", "Bob"],
-})
+@patch("ggit.cli.get_details", return_value=RepoDetails(
+    name="branches-repo",
+    path="/tmp/repos/branches-repo",
+    branch="main",
+    origin="git@github.com:user/branches-repo.git",
+    local_branches=["main", "dev"],
+    remote_branches=["origin/main"],
+    last_commit="2025-03-10",
+    last_fetch="2025-03-09",
+    authors=["Alice", "Bob"],
+))
 @patch("ggit.cli.get_github_pr_counts", return_value=(5, 2))
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)
@@ -351,7 +353,7 @@ async def test_selection_survives_sort(mock_find, mock_summary, mock_prs):
         # Select first row (branches-repo, sorted by name asc)
         await pilot.press("space")
         await pilot.pause()
-        first_path = app.filtered_summaries[0]["path"]
+        first_path = app.filtered_summaries[0].path
         assert first_path in app.selected_paths
 
         # Change sort — selection should persist
@@ -362,7 +364,7 @@ async def test_selection_survives_sort(mock_find, mock_summary, mock_prs):
 
 
 @pytest.mark.asyncio
-@patch("ggit.cli.fetch_repo", return_value={"path": "/tmp/dirty-repo", "name": "dirty-repo", "ok": True, "error": None})
+@patch("ggit.cli.fetch_repo", return_value=FetchResult(path="/tmp/dirty-repo", name="dirty-repo", ok=True, error=None))
 @patch("ggit.cli.get_github_pr_counts", return_value=None)
 @patch("ggit.cli.get_summary", side_effect=_mock_get_summary)
 @patch("ggit.cli.find_repos", side_effect=_mock_find_repos)

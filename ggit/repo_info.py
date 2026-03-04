@@ -1,13 +1,62 @@
 import json as _json
 import re
 import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Tuple
 
 from git import Repo
 
 
-def get_summary(path: Path) -> dict:
+@dataclass
+class RepoSummary:
+    name: str
+    path: str
+    branch: str
+    last_commit: str
+    local_branches: int
+    remote_branches: int
+    modified: int
+    staged: int
+    untracked: int
+    ahead: int
+    origin: Optional[str]
+    github_repo: Optional[str] = None
+    open_prs: Optional[int] = None
+    my_prs: Optional[int] = None
+
+
+@dataclass
+class RepoDetails:
+    name: str
+    path: str
+    branch: str
+    origin: Optional[str]
+    local_branches: list = field(default_factory=list)
+    remote_branches: list = field(default_factory=list)
+    last_commit: str = ""
+    last_fetch: Optional[str] = None
+    authors: list = field(default_factory=list)
+
+
+@dataclass
+class FetchResult:
+    path: str
+    name: str
+    ok: bool
+    error: Optional[str]
+
+
+@dataclass
+class PruneResult:
+    path: str
+    name: str
+    ok: bool
+    pruned: Optional[list]
+    error: Optional[str]
+
+
+def get_summary(path: Path) -> RepoSummary:
     """Return a short summary for a repository: name, branch, last commit date, branch counts, and status."""
     try:
         repo = Repo(path)
@@ -44,31 +93,31 @@ def get_summary(path: Path) -> dict:
     except (AttributeError, ValueError):
         origin = None
 
-    return {
-        "name": path.name,
-        "path": str(path),
-        "branch": branch,
-        "last_commit": last_commit,
-        "local_branches": local_branches,
-        "remote_branches": remote_branches,
-        "modified": modified,
-        "staged": staged,
-        "untracked": untracked,
-        "ahead": ahead,
-        "origin": origin,
-    }
+    return RepoSummary(
+        name=path.name,
+        path=str(path),
+        branch=branch,
+        last_commit=last_commit,
+        local_branches=local_branches,
+        remote_branches=remote_branches,
+        modified=modified,
+        staged=staged,
+        untracked=untracked,
+        ahead=ahead,
+        origin=origin,
+    )
 
 
-def is_dirty(summary: dict) -> bool:
+def is_dirty(summary: RepoSummary) -> bool:
     """Return True if the repo has modifications, staged changes, untracked files, or unpushed commits."""
-    return bool(summary["modified"] or summary["staged"] or summary["untracked"] or summary["ahead"])
+    return bool(summary.modified or summary.staged or summary.untracked or summary.ahead)
 
 
-def format_status(summary: dict) -> str:
+def format_status(summary: RepoSummary) -> str:
     """Build a compact status string from summary fields."""
     if not is_dirty(summary):
         return "✓"
-    m, s, u, a = summary["modified"], summary["staged"], summary["untracked"], summary["ahead"]
+    m, s, u, a = summary.modified, summary.staged, summary.untracked, summary.ahead
     parts = ["●"]
     if m:
         parts.append(f"{m}M")
@@ -81,31 +130,31 @@ def format_status(summary: dict) -> str:
     return " ".join(parts)
 
 
-def fetch_repo(path: Path) -> dict:
-    """Fetch from origin. Returns {path, name, ok, error}."""
+def fetch_repo(path: Path) -> FetchResult:
+    """Fetch from origin."""
     name = path.name
     try:
         repo = Repo(path)
         if not repo.remotes:
-            return {"path": str(path), "name": name, "ok": False, "error": "no remotes"}
+            return FetchResult(path=str(path), name=name, ok=False, error="no remotes")
         repo.remotes.origin.fetch()
-        return {"path": str(path), "name": name, "ok": True, "error": None}
+        return FetchResult(path=str(path), name=name, ok=True, error=None)
     except Exception as e:
-        return {"path": str(path), "name": name, "ok": False, "error": str(e)}
+        return FetchResult(path=str(path), name=name, ok=False, error=str(e))
 
 
-def prune_repo(path: Path) -> dict:
-    """Prune stale remote-tracking branches. Returns {path, name, ok, pruned, error}."""
+def prune_repo(path: Path) -> PruneResult:
+    """Prune stale remote-tracking branches."""
     name = path.name
     try:
         repo = Repo(path)
         if not repo.remotes:
-            return {"path": str(path), "name": name, "ok": False, "pruned": None, "error": "no remotes"}
+            return PruneResult(path=str(path), name=name, ok=False, pruned=None, error="no remotes")
         output = repo.git.remote("prune", "origin")
         pruned = [line.strip() for line in output.splitlines() if line.strip()] if output else []
-        return {"path": str(path), "name": name, "ok": True, "pruned": pruned, "error": None}
+        return PruneResult(path=str(path), name=name, ok=True, pruned=pruned, error=None)
     except Exception as e:
-        return {"path": str(path), "name": name, "ok": False, "pruned": None, "error": str(e)}
+        return PruneResult(path=str(path), name=name, ok=False, pruned=None, error=str(e))
 
 
 def get_details(path: Path) -> dict:
@@ -148,17 +197,17 @@ def get_details(path: Path) -> dict:
     except (AttributeError, ValueError):
         origin = None
 
-    return {
-        "name": path.name,
-        "path": str(path),
-        "branch": branch,
-        "origin": origin,
-        "local_branches": local_branches,
-        "remote_branches": remote_branches,
-        "last_commit": last_commit,
-        "last_fetch": last_fetch,
-        "authors": authors,
-    }
+    return RepoDetails(
+        name=path.name,
+        path=str(path),
+        branch=branch,
+        origin=origin,
+        local_branches=local_branches,
+        remote_branches=remote_branches,
+        last_commit=last_commit,
+        last_fetch=last_fetch,
+        authors=authors,
+    )
 
 
 def parse_github_repo(url: str) -> Optional[str]:

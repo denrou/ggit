@@ -6,7 +6,17 @@ import pytest
 
 from unittest.mock import patch
 
-from ggit.repo_info import fetch_repo, format_status, get_details, get_github_pr_counts, get_summary, is_dirty, parse_github_repo, prune_repo
+from ggit.repo_info import (
+    RepoSummary,
+    fetch_repo,
+    format_status,
+    get_details,
+    get_github_pr_counts,
+    get_summary,
+    is_dirty,
+    parse_github_repo,
+    prune_repo,
+)
 
 
 @pytest.fixture()
@@ -25,60 +35,64 @@ def tmp_repo(tmp_path: Path) -> Path:
 
 def test_get_summary(tmp_repo: Path):
     result = get_summary(tmp_repo)
-    assert result["name"] == "test-repo"
-    assert result["branch"] == "main"
-    assert len(result["last_commit"]) == 10  # YYYY-MM-DD
-    assert isinstance(result["local_branches"], int)
-    assert isinstance(result["remote_branches"], int)
-    assert isinstance(result["modified"], int)
-    assert isinstance(result["staged"], int)
-    assert isinstance(result["untracked"], int)
-    assert isinstance(result["ahead"], int)
-    assert result["origin"] is None  # no remote in fresh repo
+    assert isinstance(result, RepoSummary)
+    assert result.name == "test-repo"
+    assert result.branch == "main"
+    assert len(result.last_commit) == 10  # YYYY-MM-DD
+    assert isinstance(result.local_branches, int)
+    assert isinstance(result.remote_branches, int)
+    assert isinstance(result.modified, int)
+    assert isinstance(result.staged, int)
+    assert isinstance(result.untracked, int)
+    assert isinstance(result.ahead, int)
+    assert result.origin is None  # no remote in fresh repo
+
+
+def _make_summary(**overrides):
+    defaults = dict(
+        name="test", path="/tmp/test", branch="main", last_commit="2025-01-01",
+        local_branches=1, remote_branches=0, modified=0, staged=0, untracked=0,
+        ahead=0, origin=None,
+    )
+    defaults.update(overrides)
+    return RepoSummary(**defaults)
 
 
 def test_is_dirty_clean():
-    summary = {"modified": 0, "staged": 0, "untracked": 0, "ahead": 0}
-    assert is_dirty(summary) is False
+    assert is_dirty(_make_summary()) is False
 
 
 def test_is_dirty_modified():
-    summary = {"modified": 1, "staged": 0, "untracked": 0, "ahead": 0}
-    assert is_dirty(summary) is True
+    assert is_dirty(_make_summary(modified=1)) is True
 
 
 def test_is_dirty_staged():
-    summary = {"modified": 0, "staged": 2, "untracked": 0, "ahead": 0}
-    assert is_dirty(summary) is True
+    assert is_dirty(_make_summary(staged=2)) is True
 
 
 def test_is_dirty_untracked():
-    summary = {"modified": 0, "staged": 0, "untracked": 3, "ahead": 0}
-    assert is_dirty(summary) is True
+    assert is_dirty(_make_summary(untracked=3)) is True
 
 
 def test_is_dirty_ahead():
-    summary = {"modified": 0, "staged": 0, "untracked": 0, "ahead": 1}
-    assert is_dirty(summary) is True
+    assert is_dirty(_make_summary(ahead=1)) is True
 
 
 def test_format_status_clean():
-    summary = {"modified": 0, "staged": 0, "untracked": 0, "ahead": 0}
-    assert format_status(summary) == "✓"
+    assert format_status(_make_summary()) == "✓"
 
 
 def test_format_status_dirty():
-    summary = {"modified": 3, "staged": 1, "untracked": 2, "ahead": 4}
-    assert format_status(summary) == "● 3M 1+ 2? ↑4"
+    assert format_status(_make_summary(modified=3, staged=1, untracked=2, ahead=4)) == "● 3M 1+ 2? ↑4"
 
 
 def test_get_details(tmp_repo: Path):
     result = get_details(tmp_repo)
-    assert result["name"] == "test-repo"
-    assert result["branch"] == "main"
-    assert "main" in result["local_branches"]
-    assert result["last_fetch"] is None  # no FETCH_HEAD in fresh repo
-    assert "Test" in result["authors"]
+    assert result.name == "test-repo"
+    assert result.branch == "main"
+    assert "main" in result.local_branches
+    assert result.last_fetch is None  # no FETCH_HEAD in fresh repo
+    assert "Test" in result.authors
 
 
 def test_parse_github_repo_https():
@@ -112,30 +126,30 @@ def test_parse_github_repo_non_url():
 def test_fetch_repo_no_origin(tmp_repo: Path):
     """fetch_repo returns ok=False when there are no remotes."""
     result = fetch_repo(tmp_repo)
-    assert result["ok"] is False
-    assert result["error"] == "no remotes"
-    assert result["name"] == "test-repo"
+    assert result.ok is False
+    assert result.error == "no remotes"
+    assert result.name == "test-repo"
 
 
 def test_prune_repo_no_origin(tmp_repo: Path):
     """prune_repo returns ok=False when there are no remotes."""
     result = prune_repo(tmp_repo)
-    assert result["ok"] is False
-    assert result["error"] == "no remotes"
-    assert result["name"] == "test-repo"
-    assert result["pruned"] is None
+    assert result.ok is False
+    assert result.error == "no remotes"
+    assert result.name == "test-repo"
+    assert result.pruned is None
 
 
 def test_fetch_repo_invalid_path():
     result = fetch_repo(Path("/nonexistent/repo"))
-    assert result["ok"] is False
-    assert result["error"] is not None
+    assert result.ok is False
+    assert result.error is not None
 
 
 def test_prune_repo_invalid_path():
     result = prune_repo(Path("/nonexistent/repo"))
-    assert result["ok"] is False
-    assert result["error"] is not None
+    assert result.ok is False
+    assert result.error is not None
 
 
 @patch("ggit.repo_info.subprocess.run")

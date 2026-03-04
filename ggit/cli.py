@@ -10,6 +10,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Label, LoadingIndicator, Static
 
 from ggit.repo_info import (
+    RepoSummary,
     fetch_repo,
     format_status,
     get_details,
@@ -33,7 +34,7 @@ class DetailScreen(Screen):
         Binding("escape", "go_back", "Back", show=True),
     ]
 
-    def __init__(self, summary: dict) -> None:
+    def __init__(self, summary: RepoSummary) -> None:
         super().__init__()
         self.summary = summary
 
@@ -47,7 +48,7 @@ class DetailScreen(Screen):
 
     @work(thread=True)
     def load_details(self) -> None:
-        path = Path(self.summary["path"])
+        path = Path(self.summary.path)
         try:
             details = get_details(path)
         except Exception:
@@ -57,20 +58,20 @@ class DetailScreen(Screen):
 
     def _show_error(self) -> None:
         label = self.query_one("#detail-content", Label)
-        label.update(f"Error loading details for {self.summary['name']}")
+        label.update(f"Error loading details for {self.summary.name}")
 
-    def _show_details(self, details: dict) -> None:
+    def _show_details(self, details) -> None:
         label = self.query_one("#detail-content", Label)
         lines = [
-            f"Repository: {details['name']}",
-            f"Path: {details['path']}",
-            f"Current branch: {details['branch']}",
-            f"Origin: {details['origin'] or 'N/A'}",
-            f"Local branches: {', '.join(details['local_branches'])}",
-            f"Remote branches: {', '.join(details['remote_branches'])}",
-            f"Last commit: {details['last_commit']}",
-            f"Last fetch: {details['last_fetch'] or 'N/A'}",
-            f"Authors: {', '.join(details['authors'])}",
+            f"Repository: {details.name}",
+            f"Path: {details.path}",
+            f"Current branch: {details.branch}",
+            f"Origin: {details.origin or 'N/A'}",
+            f"Local branches: {', '.join(details.local_branches)}",
+            f"Remote branches: {', '.join(details.remote_branches)}",
+            f"Last commit: {details.last_commit}",
+            f"Last fetch: {details.last_fetch or 'N/A'}",
+            f"Authors: {', '.join(details.authors)}",
         ]
         self.detail_text = "\n".join(lines)
         label.update(self.detail_text)
@@ -101,8 +102,8 @@ class GgitApp(App):
     def __init__(self, path: str = ".") -> None:
         super().__init__()
         self.scan_path = path
-        self.summaries: list[dict] = []
-        self.filtered_summaries: list[dict] = []
+        self.summaries: list[RepoSummary] = []
+        self.filtered_summaries: list[RepoSummary] = []
         self.sort_column = "name"
         self.sort_reverse = False
         self.filter_mode = "all"
@@ -143,9 +144,8 @@ class GgitApp(App):
         # Phase 2: fetch GitHub PR counts
         github_repos: dict = {}
         for s in summaries:
-            origin = s.get("origin")
-            if origin:
-                gh_repo = parse_github_repo(origin)
+            if s.origin:
+                gh_repo = parse_github_repo(s.origin)
                 if gh_repo and gh_repo not in github_repos:
                     github_repos[gh_repo] = None
 
@@ -156,27 +156,22 @@ class GgitApp(App):
                     github_repos[repo] = future.result()
 
         for s in summaries:
-            origin = s.get("origin")
-            gh_repo = parse_github_repo(origin) if origin else None
-            s["github_repo"] = gh_repo
+            gh_repo = parse_github_repo(s.origin) if s.origin else None
+            s.github_repo = gh_repo
             if gh_repo:
                 pr_counts = github_repos.get(gh_repo)
-                s["open_prs"] = pr_counts[0] if pr_counts else None
-                s["my_prs"] = pr_counts[1] if pr_counts else None
+                s.open_prs = pr_counts[0] if pr_counts else None
+                s.my_prs = pr_counts[1] if pr_counts else None
             else:
-                s["open_prs"] = None
-                s["my_prs"] = None
+                s.open_prs = None
+                s.my_prs = None
 
         self.call_from_thread(self.refresh_table)
 
     def _phase1_done(self) -> None:
         for s in self.summaries:
-            if "github_repo" not in s:
-                origin = s.get("origin")
-                gh_repo = parse_github_repo(origin) if origin else None
-                s["github_repo"] = gh_repo
-                s["open_prs"] = None
-                s["my_prs"] = None
+            if s.github_repo is None and s.origin:
+                s.github_repo = parse_github_repo(s.origin)
         loading = self.query_one("#loading", LoadingIndicator)
         loading.display = False
         table = self.query_one("#repo-table", DataTable)
@@ -196,22 +191,22 @@ class GgitApp(App):
             filtered = list(self.summaries)
 
         # Sort
-        filtered.sort(key=lambda s: s[self.sort_column], reverse=self.sort_reverse)
+        filtered.sort(key=lambda s: getattr(s, self.sort_column), reverse=self.sort_reverse)
         self.filtered_summaries = filtered
 
         # Rebuild table
         table.clear()
         for s in filtered:
-            marker = "●" if s["path"] in self.selected_paths else " "
+            marker = "●" if s.path in self.selected_paths else " "
             status = format_status(s)
-            open_prs = str(s["open_prs"]) if s.get("open_prs") is not None else ""
-            my_prs = str(s["my_prs"]) if s.get("my_prs") is not None else ""
+            open_prs = str(s.open_prs) if s.open_prs is not None else ""
+            my_prs = str(s.my_prs) if s.my_prs is not None else ""
             table.add_row(
                 marker,
-                s["name"], s["branch"], status,
-                str(s["local_branches"]), str(s["remote_branches"]),
-                open_prs, my_prs, s["last_commit"],
-                key=s["path"],
+                s.name, s.branch, status,
+                str(s.local_branches), str(s.remote_branches),
+                open_prs, my_prs, s.last_commit,
+                key=s.path,
             )
 
         # Status bar
@@ -231,7 +226,7 @@ class GgitApp(App):
             return None
         idx = table.cursor_row
         if 0 <= idx < len(self.filtered_summaries):
-            return self.filtered_summaries[idx]["path"]
+            return self.filtered_summaries[idx].path
         return None
 
     def _get_target_paths(self) -> list[str]:
@@ -266,7 +261,7 @@ class GgitApp(App):
         self.refresh_table()
 
     def action_toggle_all(self) -> None:
-        visible = {s["path"] for s in self.filtered_summaries}
+        visible = {s.path for s in self.filtered_summaries}
         if visible <= self.selected_paths:
             # All visible are selected → deselect them
             self.selected_paths -= visible
@@ -286,19 +281,20 @@ class GgitApp(App):
         with ThreadPoolExecutor(max_workers=4) as executor:
             results = list(executor.map(lambda p: fetch_repo(Path(p)), paths))
 
-        ok = sum(1 for r in results if r["ok"])
+        ok = sum(1 for r in results if r.ok)
         failed = len(results) - ok
 
         # Refresh summaries for affected repos
         for r in results:
-            if r["ok"]:
+            if r.ok:
                 try:
-                    new_summary = get_summary(Path(r["path"]))
+                    new_summary = get_summary(Path(r.path))
                     for i, s in enumerate(self.summaries):
-                        if s["path"] == r["path"]:
+                        if s.path == r.path:
                             # Preserve PR fields
-                            for key in ("github_repo", "open_prs", "my_prs"):
-                                new_summary[key] = s.get(key)
+                            new_summary.github_repo = s.github_repo
+                            new_summary.open_prs = s.open_prs
+                            new_summary.my_prs = s.my_prs
                             self.summaries[i] = new_summary
                             break
                 except Exception:
@@ -321,18 +317,19 @@ class GgitApp(App):
         with ThreadPoolExecutor(max_workers=4) as executor:
             results = list(executor.map(lambda p: prune_repo(Path(p)), paths))
 
-        ok = sum(1 for r in results if r["ok"])
+        ok = sum(1 for r in results if r.ok)
         failed = len(results) - ok
 
         # Refresh summaries for affected repos
         for r in results:
-            if r["ok"]:
+            if r.ok:
                 try:
-                    new_summary = get_summary(Path(r["path"]))
+                    new_summary = get_summary(Path(r.path))
                     for i, s in enumerate(self.summaries):
-                        if s["path"] == r["path"]:
-                            for key in ("github_repo", "open_prs", "my_prs"):
-                                new_summary[key] = s.get(key)
+                        if s.path == r.path:
+                            new_summary.github_repo = s.github_repo
+                            new_summary.open_prs = s.open_prs
+                            new_summary.my_prs = s.my_prs
                             self.summaries[i] = new_summary
                             break
                 except Exception:
