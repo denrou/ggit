@@ -25,8 +25,7 @@ from ggit.scanner import find_repos
 logger = logging.getLogger(__name__)
 
 COLUMNS = ["", "Name", "Branch", "Status", "Local", "Remote", "Open PRs", "My PRs", "Last Commit"]
-SORT_KEYS = ["name", "branch", "last_commit"]
-SORT_LABELS = ["Name", "Branch", "Last Commit"]
+SORT_OPTIONS = {"name": "Name", "branch": "Branch", "last_commit": "Last Commit"}
 
 
 class DetailScreen(Screen):
@@ -210,7 +209,7 @@ class GgitApp(App):
             )
 
         # Status bar
-        sort_label = SORT_LABELS[SORT_KEYS.index(self.sort_column)]
+        sort_label = SORT_OPTIONS[self.sort_column]
         direction = "desc" if self.sort_reverse else "asc"
         filter_text = f" | Filter: {self.filter_mode}" if self.filter_mode != "all" else ""
         sel_count = len(self.selected_paths)
@@ -345,8 +344,9 @@ class GgitApp(App):
         self.refresh_table()
 
     def action_cycle_sort(self) -> None:
-        current = SORT_KEYS.index(self.sort_column)
-        self.sort_column = SORT_KEYS[(current + 1) % len(SORT_KEYS)]
+        keys = list(SORT_OPTIONS)
+        current = keys.index(self.sort_column)
+        self.sort_column = keys[(current + 1) % len(keys)]
         self.refresh_table()
 
     def action_toggle_reverse(self) -> None:
