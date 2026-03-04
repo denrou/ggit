@@ -1,4 +1,4 @@
-# CLAUDE.md
+#CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -42,18 +42,18 @@ Three modules under `ggit/`:
 
 ## Keybindings
 
-| Key | Action |
-|-----|--------|
-| j / k | Move cursor down / up |
-| Enter | Show details for selected repo |
-| Space | Toggle select current row |
-| x | Toggle select all visible rows |
-| f | Fetch selected repos (or cursor row) |
-| p | Prune selected repos (or cursor row) |
-| s | Cycle sort: Name → Branch → Last Commit |
-| r | Toggle reverse sort |
-| d | Filter dirty repos only |
-| c | Filter clean repos only |
-| a | Show all repos (clear filter) |
-| q | Quit |
-| Escape | Back (on detail screen) |
+| Key    | Action                                  |
+| ------ | --------------------------------------- |
+| j / k  | Move cursor down / up                   |
+| Enter  | Show details for selected repo          |
+| Space  | Toggle select current row               |
+| x      | Toggle select all visible rows          |
+| f      | Fetch selected repos (or cursor row)    |
+| p      | Prune selected repos (or cursor row)    |
+| s      | Cycle sort: Name → Branch → Last Commit |
+| r      | Toggle reverse sort                     |
+| d      | Filter dirty repos only                 |
+| c      | Filter clean repos only                 |
+| a      | Show all repos (clear filter)           |
+| q      | Quit                                    |
+| Escape | Back (on detail screen)                 |
