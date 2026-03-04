@@ -45,6 +45,7 @@ class FetchResult:
     name: str
     ok: bool
     error: Optional[str]
+    pruned: Optional[list] = None
 
 
 @dataclass
