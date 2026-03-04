@@ -9,6 +9,7 @@ requires-python = ">=3.9"
 dependencies = [
     "textual",
     "GitPython",
+    "rich",
 ]
 
 [project.scripts]
