@@ -1,5 +1,6 @@
 import argparse
 import logging
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from importlib.metadata import version as pkg_version
@@ -9,7 +10,7 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Header, Label, LoadingIndicator, Static
+from textual.widgets import DataTable, Footer, Header, Input, Label, LoadingIndicator, Static
 
 from ggit.repo_info import (
     RepoSummary,
@@ -32,6 +33,7 @@ SORT_OPTIONS = {"name": "Name", "branch": "Branch", "last_commit": "Last Commit"
 
 class DetailScreen(Screen):
     BINDINGS = [
+        Binding("colon", "open_command", "Run cmd", show=True),
         Binding("escape", "go_back", "Back", show=True),
     ]
 
@@ -42,6 +44,10 @@ class DetailScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Label("Loading details...", id="detail-content")
+        yield Label("", id="command-output")
+        cmd_input = Input(placeholder="Enter command...", id="command-input")
+        cmd_input.display = False
+        yield cmd_input
         yield Footer()
 
     def on_mount(self) -> None:
@@ -83,7 +89,51 @@ class DetailScreen(Screen):
             return ", ".join(authors)
         return ", ".join(authors[:limit]) + f" (and {len(authors) - limit} more)"
 
+    def action_open_command(self) -> None:
+        cmd_input = self.query_one("#command-input", Input)
+        cmd_input.display = True
+        cmd_input.focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        cmd_input = self.query_one("#command-input", Input)
+        command = event.value.strip()
+        cmd_input.value = ""
+        cmd_input.display = False
+        if command:
+            self._run_command(command)
+
+    @work(thread=True)
+    def _run_command(self, command: str) -> None:
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=self.summary.path,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            output = result.stdout
+            if result.stderr:
+                output += ("\n" if output else "") + result.stderr
+            if not output:
+                output = "(no output)"
+        except subprocess.TimeoutExpired:
+            output = "(command timed out after 30s)"
+        except Exception as e:
+            output = f"(error: {e})"
+        self.app.call_from_thread(self._show_command_output, command, output)
+
+    def _show_command_output(self, command: str, output: str) -> None:
+        label = self.query_one("#command-output", Label)
+        label.update(f"$ {command}\n{output}")
+
     def action_go_back(self) -> None:
+        cmd_input = self.query_one("#command-input", Input)
+        if cmd_input.display:
+            cmd_input.value = ""
+            cmd_input.display = False
+            return
         self.app.pop_screen()
 
 
