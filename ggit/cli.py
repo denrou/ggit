@@ -103,8 +103,11 @@ class GgitApp(App):
         Binding("d", "filter_dirty", "Dirty", show=True),
         Binding("c", "filter_clean", "Clean", show=True),
         Binding("a", "filter_all", "All", show=True),
+        Binding("t", "toggle_autorefresh", "Auto", show=True),
         Binding("q", "quit", "Quit", show=True),
     ]
+
+    AUTO_REFRESH_INTERVAL = 30
 
     def __init__(self, path: str = ".") -> None:
         super().__init__()
@@ -115,6 +118,7 @@ class GgitApp(App):
         self.sort_reverse = False
         self.filter_mode = "all"
         self.selected_paths: set[str] = set()
+        self.autorefresh_timer = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -222,8 +226,9 @@ class GgitApp(App):
         filter_text = f" | Filter: {self.filter_mode}" if self.filter_mode != "all" else ""
         sel_count = len(self.selected_paths)
         sel_text = f" | {sel_count} selected" if sel_count else ""
+        auto_text = f" | Auto: {self.AUTO_REFRESH_INTERVAL}s" if self.autorefresh_timer else ""
         status_bar.update(
-            f" {len(filtered)} repos | Sort: {sort_label} ({direction}){filter_text}{sel_text}"
+            f" {len(filtered)} repos | Sort: {sort_label} ({direction}){filter_text}{sel_text}{auto_text}"
         )
 
     def _get_cursor_path(self) -> str | None:
@@ -374,6 +379,44 @@ class GgitApp(App):
     def action_filter_all(self) -> None:
         self.filter_mode = "all"
         self.refresh_table()
+
+    def action_toggle_autorefresh(self) -> None:
+        if self.autorefresh_timer is not None:
+            self.autorefresh_timer.stop()
+            self.autorefresh_timer = None
+            self.notify("Autorefresh off")
+        else:
+            self.autorefresh_timer = self.set_interval(
+                self.AUTO_REFRESH_INTERVAL, self._autorefresh
+            )
+            self.notify(f"Autorefresh on ({self.AUTO_REFRESH_INTERVAL}s)")
+
+    def _autorefresh(self) -> None:
+        self._refresh_summaries()
+
+    @work(thread=True)
+    def _refresh_summaries(self) -> None:
+        """Re-scan summaries for known repos in the background."""
+        def _safe_summary(repo_path):
+            try:
+                return get_summary(repo_path)
+            except Exception:
+                logger.warning("Autorefresh failed for: %s", repo_path, exc_info=True)
+                return None
+
+        paths = [Path(s.path) for s in self.summaries]
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(_safe_summary, paths))
+
+        for i, new_summary in enumerate(results):
+            if new_summary is not None:
+                old = self.summaries[i]
+                new_summary.github_repo = old.github_repo
+                new_summary.open_prs = old.open_prs
+                new_summary.my_prs = old.my_prs
+                self.summaries[i] = new_summary
+
+        self.call_from_thread(self.refresh_table)
 
 
 def main() -> None:
