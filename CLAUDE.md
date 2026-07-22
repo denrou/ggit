@@ -24,17 +24,19 @@ uv run pytest tests/test_cli.py::test_function_name -v
 
 ## Architecture
 
-Three modules under `ggit/`:
+Five modules under `ggit/`:
 
-- **`cli.py`** — Textual TUI app with two screens: `MainScreen` (DataTable with repo list, keybindings for sort/filter) and `DetailScreen` (single repo details, pushed on Enter). `GgitApp` manages state and two-phase background loading (scan + PR counts). Entry point: `main()`.
+- **`cli.py`** — Textual TUI app with two screens: `MainScreen` (DataTable with repo list, keybindings for sort/filter) and `DetailScreen` (single repo details, pushed on Enter). `GgitApp` manages state and two-phase background loading (scan + PR counts). Entry point: `main()`, which also dispatches the non-interactive `--json` mode (`run_json_report()`).
 - **`repo_info.py`** — Repository data extraction using GitPython. `get_summary()` returns short status (modified/staged/untracked/ahead counts), `get_details()` returns full info (authors, branches), `fetch_repo()` and `prune_repo()` run git fetch/prune and return result dicts. Also handles GitHub URL parsing and PR count fetching via `gh` CLI.
-- **`scanner.py`** — `find_repos(path)` walks directory trees to discover `.git` folders, skipping hidden directories and pruning nested repos.
+- **`report.py`** — Non-interactive cleanup reports. `get_report()` builds a `RepoReport` (working-tree state, stashes, merged/gone branches, merged remote branches, worktrees, ahead/behind, default branch), `build_reports()` runs it in parallel over many repos, `needs_attention()` filters for `--dirty`, `reports_to_json()` serializes for stdout.
+- **`config.py`** — Optional TOML config from `~/.config/ggit/config.toml` (`paths`, `github_prs`). `load_config()` returns a `Config` dataclass; raises `ValueError` on a broken file.
+- **`scanner.py`** — `find_repos(path)` walks directory trees to discover `.git` folders, skipping hidden directories and pruning nested repos. Progress renders to stderr so stdout stays clean for `--json`.
 - **`app.css`** — Textual CSS for screen layouts.
 
 ## Key Details
 
 - Entry point: `ggit.cli:main`
-- Runtime deps: `textual`, `GitPython`
+- Runtime deps: `textual`, `GitPython`, `rich`, `tomli` (Python < 3.11 only)
 - Dev deps: `pytest`, `pytest-asyncio`, `textual-dev`
 - Build backend: `hatchling`
 - Python >=3.9

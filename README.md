@@ -32,6 +32,42 @@ ggit ~/code
 
 The TUI displays a table of all discovered repositories with their branch, status, origin, PR counts, and last commit date. Use the keyboard to navigate, sort, filter, and view details.
 
+### JSON mode (non-interactive)
+
+Print a machine-readable report to stdout instead of launching the TUI — handy for scripts, cron jobs, or LLM agents:
+
+```bash
+ggit --json ~/code
+ggit --json --dirty          # only repos that need attention
+ggit --json --no-prs         # skip GitHub PR lookups (faster, offline)
+```
+
+The report includes, per repository:
+
+- working-tree state (modified/staged/untracked counts, `git status --short` lines)
+- ahead/behind counts against the tracking branch
+- stashes (index, date, message)
+- local branches, flagged when merged into the default branch or when their upstream is gone
+- remote branches already merged into the default branch
+- worktrees (path, branch, dirty, prunable)
+- origin, detected default branch, and open PR counts (via the `gh` CLI)
+
+`--dirty` keeps only repositories with something to clean up: a dirty working tree, stashes, merged or gone branches, or stale worktrees.
+
+### Configuration
+
+ggit reads an optional config file from `~/.config/ggit/config.toml` (or `$XDG_CONFIG_HOME/ggit/config.toml`):
+
+```toml
+# Directories scanned when no path argument is given (default: current directory)
+paths = ["~/code"]
+
+# Look up open PR counts via the gh CLI (default: true)
+github_prs = true
+```
+
+With `paths` set, running `ggit` (or `ggit --json`) from anywhere scans your usual code directories. Command-line paths always take precedence, and `--config FILE` points at an alternative file.
+
 ### Keybindings
 
 | Key    | Action                                  |
