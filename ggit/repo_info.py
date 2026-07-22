@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from git import Repo
+from git.exc import GitCommandError
 
 
 @dataclass
@@ -37,6 +38,8 @@ class RepoDetails:
     last_commit: str = ""
     last_fetch: Optional[str] = None
     authors: list = field(default_factory=list)
+    git_status_raw: str = ""
+    git_status_error: Optional[str] = None
 
 
 @dataclass
@@ -198,6 +201,13 @@ def get_details(path: Path) -> dict:
     except (AttributeError, ValueError):
         origin = None
 
+    git_status_error: Optional[str] = None
+    try:
+        git_status_raw = repo.git.status("--short") if repo.is_dirty(untracked_files=True) else ""
+    except (GitCommandError, OSError) as exc:
+        git_status_raw = ""
+        git_status_error = str(exc)
+
     return RepoDetails(
         name=path.name,
         path=str(path),
@@ -208,6 +218,8 @@ def get_details(path: Path) -> dict:
         last_commit=last_commit,
         last_fetch=last_fetch,
         authors=authors,
+        git_status_raw=git_status_raw,
+        git_status_error=git_status_error,
     )
 
 

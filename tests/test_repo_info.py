@@ -95,6 +95,21 @@ def test_get_details(tmp_repo: Path):
     assert "Test" in result.authors
 
 
+def test_get_details_git_status_clean(tmp_repo: Path):
+    result = get_details(tmp_repo)
+    assert result.git_status_raw == ""
+    assert result.git_status_error is None
+
+
+def test_get_details_git_status_dirty(tmp_repo: Path):
+    (tmp_repo / "README.md").write_text("changed")
+    (tmp_repo / "new.txt").write_text("untracked")
+    result = get_details(tmp_repo)
+    assert "README.md" in result.git_status_raw
+    assert "new.txt" in result.git_status_raw
+    assert result.git_status_error is None
+
+
 def test_parse_github_repo_https():
     assert parse_github_repo("https://github.com/acme/myrepo.git") == "acme/myrepo"
 

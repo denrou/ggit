@@ -5,7 +5,9 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from importlib.metadata import version as pkg_version
 from pathlib import Path
+from typing import Optional
 
+from rich.markup import escape
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -44,6 +46,7 @@ class DetailScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Label("Loading details...", id="detail-content")
+        yield Static("", id="git-status")
         yield Label("", id="command-output")
         cmd_input = Input(placeholder="Enter command...", id="command-input")
         cmd_input.display = False
@@ -82,6 +85,82 @@ class DetailScreen(Screen):
         ]
         self.detail_text = "\n".join(lines)
         label.update(self.detail_text)
+
+        git_status_widget = self.query_one("#git-status", Static)
+        git_status_widget.update(
+            self._format_git_status(details.git_status_raw, details.git_status_error)
+        )
+
+    @staticmethod
+    def _format_git_status(raw: str, error: Optional[str] = None) -> str:
+        if error:
+            return f"[bold]Git Status[/bold]\n[yellow]⚠ Could not read git status: {escape(error)}[/yellow]"
+        if not raw:
+            return "[bold]Git Status[/bold]\n[green]✓ Working tree clean[/green]"
+
+        _unmerged_labels = {
+            ("D", "D"): "both deleted",
+            ("A", "A"): "both added",
+            ("U", "U"): "both modified",
+            ("A", "U"): "added by us",
+            ("U", "A"): "added by them",
+            ("D", "U"): "deleted by us",
+            ("U", "D"): "deleted by them",
+        }
+        _stage_labels = {"M": "modified", "A": "new file", "D": "deleted", "R": "renamed", "C": "copied"}
+        _unstage_labels = {"M": "modified", "D": "deleted"}
+
+        staged: list[tuple[str, str]] = []
+        unstaged: list[tuple[str, str]] = []
+        unmerged: list[tuple[str, str]] = []
+        untracked: list[str] = []
+
+        for line in raw.splitlines():
+            if len(line) < 3:
+                continue
+            x, y = line[0], line[1]
+            path = line[3:]
+            if x == "?" and y == "?":
+                untracked.append(path)
+            elif (x, y) in _unmerged_labels:
+                unmerged.append((_unmerged_labels[(x, y)], path))
+            else:
+                if x != " ":
+                    staged.append((x, path))
+                if y != " ":
+                    unstaged.append((y, path))
+
+        parts = ["[bold]Git Status[/bold]"]
+
+        if staged:
+            parts.append("[bold green]Changes to be committed:[/bold green]")
+            for code, path in staged:
+                label = _stage_labels.get(code, code)
+                parts.append(f"  [green]{escape(label)}:[/green]  {escape(path)}")
+
+        if unstaged:
+            if len(parts) > 1:
+                parts.append("")
+            parts.append("[bold red]Changes not staged for commit:[/bold red]")
+            for code, path in unstaged:
+                label = _unstage_labels.get(code, code)
+                parts.append(f"  [red]{escape(label)}:[/red]  {escape(path)}")
+
+        if unmerged:
+            if len(parts) > 1:
+                parts.append("")
+            parts.append("[bold red]Unmerged paths:[/bold red]")
+            for label, path in unmerged:
+                parts.append(f"  [red]{label}:[/red]  {escape(path)}")
+
+        if untracked:
+            if len(parts) > 1:
+                parts.append("")
+            parts.append("[bold]Untracked files:[/bold]")
+            for path in untracked:
+                parts.append(f"  [dim]{escape(path)}[/dim]")
+
+        return "\n".join(parts)
 
     @staticmethod
     def _format_authors(authors: list[str], limit: int = 10) -> str:
