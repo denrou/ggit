@@ -411,6 +411,41 @@ def test_version_flag():
     assert "ggit" in result.stdout
 
 
+def test_json_flag(tmp_path):
+    """--json prints a machine-readable report to stdout without launching the TUI."""
+    import json
+    import os
+
+    repo_dir = tmp_path / "json-repo"
+    repo_dir.mkdir()
+    env = {**os.environ, "GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "t@t.com",
+           "GIT_COMMITTER_NAME": "Test", "GIT_COMMITTER_EMAIL": "t@t.com"}
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo_dir, check=True, capture_output=True)
+    (repo_dir / "README.md").write_text("hello")
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo_dir, check=True, capture_output=True, env=env)
+
+    result = subprocess.run(
+        ["uv", "run", "ggit", "--json", "--no-prs", str(tmp_path)],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["repo_count"] == 1
+    assert payload["repos"][0]["name"] == "json-repo"
+    assert payload["repos"][0]["branch"] == "main"
+
+
+def test_dirty_requires_json():
+    """--dirty without --json is rejected."""
+    result = subprocess.run(
+        ["uv", "run", "ggit", "--dirty"],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode != 0
+    assert "--dirty requires --json" in result.stderr
+
+
 # --- Authors truncation tests ---
 
 

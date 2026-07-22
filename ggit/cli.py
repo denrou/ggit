@@ -5,7 +5,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from importlib.metadata import version as pkg_version
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from rich.markup import escape
 from textual import work
@@ -25,6 +25,8 @@ from ggit.repo_info import (
     parse_github_repo,
     prune_repo,
 )
+from ggit.config import load_config
+from ggit.report import build_reports, needs_attention, reports_to_json
 from ggit.scanner import find_repos
 
 logger = logging.getLogger(__name__)
@@ -238,9 +240,10 @@ class GgitApp(App):
 
     AUTO_REFRESH_INTERVAL = 30
 
-    def __init__(self, path: str = ".") -> None:
+    def __init__(self, path: Union[str, list] = ".", include_prs: bool = True) -> None:
         super().__init__()
-        self.scan_path = path
+        self.scan_paths = [path] if isinstance(path, str) else list(path)
+        self.include_prs = include_prs
         self.summaries: list[RepoSummary] = []
         self.filtered_summaries: list[RepoSummary] = []
         self.sort_column = "name"
@@ -266,7 +269,7 @@ class GgitApp(App):
     @work(thread=True)
     def load_repos(self) -> None:
         # Phase 1: scan and get summaries (parallel)
-        repos = find_repos(self.scan_path)
+        repos = _scan_paths(self.scan_paths)
 
         def _safe_summary(repo_path):
             try:
@@ -282,6 +285,8 @@ class GgitApp(App):
         self.call_from_thread(self._phase1_done)
 
         # Phase 2: fetch GitHub PR counts
+        if not self.include_prs:
+            return
         github_repos: dict = {}
         for s in summaries:
             if s.origin:
@@ -548,19 +553,74 @@ class GgitApp(App):
         self.call_from_thread(self.refresh_table)
 
 
+def _scan_paths(paths: list) -> list:
+    """Find repositories under each path, deduplicated, preserving order."""
+    repos: list[Path] = []
+    seen: set = set()
+    for path in paths:
+        for repo in find_repos(path):
+            if repo not in seen:
+                seen.add(repo)
+                repos.append(repo)
+    return repos
+
+
+def run_json_report(paths: list, include_prs: bool = True, dirty_only: bool = False) -> None:
+    """Scan paths and print a JSON report to stdout (no TUI)."""
+    repos = _scan_paths(paths)
+    reports = build_reports(repos, include_prs=include_prs)
+    if dirty_only:
+        reports = [r for r in reports if needs_attention(r)]
+    print(reports_to_json(reports, paths))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="ggit",
         description="Scan directories for git repositories and display an interactive overview.",
     )
     parser.add_argument(
-        "path", nargs="?", default=".",
-        help="root directory to scan (default: current directory)",
+        "paths", nargs="*",
+        help="root directories to scan (default: config file paths, or current directory)",
+    )
+    parser.add_argument(
+        "--json", action="store_true",
+        help="print a JSON report to stdout instead of launching the TUI",
+    )
+    parser.add_argument(
+        "--dirty", action="store_true",
+        help="with --json: only include repos that need attention "
+             "(dirty tree, stashes, merged/gone branches, stale worktrees)",
+    )
+    parser.add_argument(
+        "--no-prs", action="store_true",
+        help="skip GitHub PR count lookups (faster, works offline)",
+    )
+    parser.add_argument(
+        "--config", type=Path, metavar="FILE",
+        help="config file to use (default: ~/.config/ggit/config.toml)",
     )
     parser.add_argument(
         "--version", action="version",
         version=f"%(prog)s {pkg_version('ggit')}",
     )
     args = parser.parse_args()
-    app = GgitApp(args.path)
+
+    try:
+        config = load_config(args.config)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+
+    paths = args.paths or config.paths or ["."]
+    include_prs = config.github_prs and not args.no_prs
+
+    if args.json:
+        run_json_report(paths, include_prs=include_prs, dirty_only=args.dirty)
+        return
+
+    if args.dirty:
+        parser.error("--dirty requires --json")
+
+    app = GgitApp(paths, include_prs=include_prs)
     app.run()
