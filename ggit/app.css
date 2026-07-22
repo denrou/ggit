@@ -23,6 +23,14 @@ DetailScreen {
     height: auto;
 }
 
+#git-status {
+    padding: 0 2 1 2;
+    height: auto;
+    max-height: 40vh;
+    overflow-y: auto;
+    border-top: solid $primary-darken-2;
+}
+
 #command-input {
     dock: bottom;
     margin: 0 1;

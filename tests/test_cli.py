@@ -461,3 +461,75 @@ def test_format_authors_truncated():
     assert "Author0" in result
     assert "Author9" in result
     assert "Author10" not in result
+
+
+# --- Git status formatting tests ---
+
+
+def test_format_git_status_clean():
+    result = DetailScreen._format_git_status("")
+    assert "Working tree clean" in result
+
+
+def test_format_git_status_error():
+    result = DetailScreen._format_git_status("", error="index.lock held")
+    assert "Could not read git status" in result
+    assert "index.lock held" in result
+    assert "Working tree clean" not in result
+
+
+def test_format_git_status_sections():
+    raw = "M  staged.py\n M unstaged.py\nA  new.py\nD  gone.py\n?? untracked.txt"
+    result = DetailScreen._format_git_status(raw)
+    lines = result.splitlines()
+    committed = lines.index("[bold green]Changes to be committed:[/bold green]")
+    not_staged = lines.index("[bold red]Changes not staged for commit:[/bold red]")
+    untracked = lines.index("[bold]Untracked files:[/bold]")
+    assert any("staged.py" in line for line in lines[committed:not_staged])
+    assert any("modified:" in line and "unstaged.py" in line for line in lines[not_staged:untracked])
+    assert any("untracked.txt" in line for line in lines[untracked:])
+    assert "new file:" in result
+    assert "deleted:" in result
+
+
+def test_format_git_status_partially_staged():
+    result = DetailScreen._format_git_status("MM both.py")
+    assert "Changes to be committed:" in result
+    assert "Changes not staged for commit:" in result
+    assert result.count("both.py") == 2
+
+
+def test_format_git_status_escapes_markup():
+    from rich.text import Text
+
+    raw = "?? weird[/]name.txt\n M [red]file.py"
+    result = DetailScreen._format_git_status(raw)
+    text = Text.from_markup(result)  # must not raise MarkupError
+    assert "weird[/]name.txt" in text.plain
+    assert "[red]file.py" in text.plain
+
+
+def test_format_git_status_unmerged():
+    result = DetailScreen._format_git_status("UU conflict.py\nAA added.py")
+    assert "Unmerged paths:" in result
+    assert "both modified:" in result
+    assert "both added:" in result
+    assert result.count("conflict.py") == 1
+    assert "Changes to be committed:" not in result
+
+
+def test_format_git_status_rename():
+    result = DetailScreen._format_git_status("R  old.py -> new.py")
+    assert "renamed:" in result
+    assert "old.py -> new.py" in result
+
+
+def test_format_git_status_unknown_code_falls_back_to_letter():
+    result = DetailScreen._format_git_status("T  typechange.py")
+    assert "T:" in result
+    assert "typechange.py" in result
+
+
+def test_format_git_status_skips_malformed_lines():
+    result = DetailScreen._format_git_status("M  ok.py\n\nXY")
+    assert "ok.py" in result
