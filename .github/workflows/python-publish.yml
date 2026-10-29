@@ -77,4 +77,4 @@ jobs:
       - name: Trigger Homebrew tap update
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: gh workflow run update-formula.yml --repo denrou/homebrew-ggit
+        run: gh workflow run update-formula.yml --repo denrou/homebrew-tap -f formula=ggit
