@@ -7,6 +7,8 @@ An interactive TUI to scan directories for git repositories and get a quick over
 ### Homebrew
 
 ```bash
+brew tap denrou/tap
+brew trust denrou/tap
 brew install denrou/tap/ggit
 ```
 
